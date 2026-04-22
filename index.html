@@ -65,6 +65,13 @@
           <p class="subtle">Static HTML version. Client-side only. Cleaner UI, fewer moving parts, less Streamlit drama.</p>
         </div>
         <div class="header-actions">
+          <label class="header-scale" for="uiScaleRange">
+            <span>GUI scale</span>
+            <div class="scale-control">
+              <input id="uiScaleRange" type="range" min="75" max="135" step="5" value="100" />
+              <span id="uiScaleValue" class="scale-value">100%</span>
+            </div>
+          </label>
           <button id="openLeftBtn" class="panel-toggle" type="button">☰ Departments</button>
           <button id="openRightBtn" class="panel-toggle" type="button">⚙ Workspace</button>
         </div>

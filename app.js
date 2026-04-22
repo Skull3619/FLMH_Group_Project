@@ -78,6 +78,8 @@
     notesInput: qs('#notesInput'),
     iterationSlots: qs('#iterationSlots'),
     workbookInput: qs('#workbookInput'),
+    uiScaleRange: qs('#uiScaleRange'),
+    uiScaleValue: qs('#uiScaleValue'),
     tabOverview: qs('#tab-overview'), tabAlgorithm: qs('#tab-algorithm'), tabData: qs('#tab-data'), tabIterations: qs('#tab-iterations'), tabLog: qs('#tab-log'),
   };
 
@@ -106,6 +108,7 @@
     openSidebar: null,
     lastScores: null,
     dataSource: 'Built-in defaults',
+    uiScale: 100,
   };
 
   function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
@@ -137,6 +140,7 @@
     state.maxIt = clamp(state.maxIt, 1, 200);
     state.trials = clamp(state.trials, 1, 100);
     state.impIt = clamp(state.impIt, 1, 200);
+    state.uiScale = clamp(Number(state.uiScale || 100), 75, 135);
     state.rect = {
       x1: clamp(Number(el.rectX1.value || 0), 0, state.gw - 1),
       y1: clamp(Number(el.rectY1.value || 0), 0, state.gh - 1),
@@ -145,6 +149,13 @@
     };
   }
   function lockSet() { return new Set(state.lockedIds); }
+  function applyUiScale() {
+    const scale = clamp(Number(state.uiScale || 100), 75, 135);
+    state.uiScale = scale;
+    document.documentElement.style.setProperty('--ui-scale', (scale / 100).toFixed(2));
+    if (el.uiScaleRange) el.uiScaleRange.value = String(scale);
+    if (el.uiScaleValue) el.uiScaleValue.textContent = `${scale}%`;
+  }
   function countCells(cells) {
     const out = {};
     for (const id of cells) if (id) out[id] = (out[id] || 0) + 1;
@@ -530,7 +541,7 @@
 
   function renderGrid() {
     el.gridBoard.innerHTML = '';
-    el.gridBoard.style.gridTemplateColumns = `repeat(${state.gw}, 26px)`;
+    el.gridBoard.style.gridTemplateColumns = `repeat(${state.gw}, var(--cell-size))`;
     const locked = lockSet();
     const previewSet = new Set();
     if (state.previewRect) {
@@ -654,12 +665,16 @@
       card.querySelector('.dept-stats').innerHTML = `<div>ID ${d.id}</div><div>${d.capped ? 'Capped' : 'Flexible'} · ${d.grow ? 'Can grow' : 'No growth'} · ${d.shrink ? 'Can shrink' : 'No shrink'}</div>`;
       const controls = card.querySelector('.dept-controls');
       controls.innerHTML = `
-        <label class="checkline"><input type="checkbox" ${d.locked ? 'checked' : ''} data-flag="locked"> Lock</label>
-        <label class="checkline"><input type="checkbox" ${d.grow ? 'checked' : ''} data-flag="grow"> Grow</label>
-        <label class="checkline"><input type="checkbox" ${d.shrink ? 'checked' : ''} data-flag="shrink"> Shrink</label>
-        <label class="checkline"><input type="checkbox" ${d.capped ? 'checked' : ''} data-flag="capped"> Cap</label>
-        <label class="checkline">Sqft <input type="number" value="${d.sqft}" min="100" step="100" data-field="sqft"></label>
-        <label class="checkline">Color <input type="color" value="${normalizeHex(d.color)}" data-field="color"></label>
+        <div class="dept-flag-grid">
+          <label class="dept-flag"><input type="checkbox" ${d.locked ? 'checked' : ''} data-flag="locked"> Lock</label>
+          <label class="dept-flag"><input type="checkbox" ${d.grow ? 'checked' : ''} data-flag="grow"> Grow</label>
+          <label class="dept-flag"><input type="checkbox" ${d.shrink ? 'checked' : ''} data-flag="shrink"> Shrink</label>
+          <label class="dept-flag"><input type="checkbox" ${d.capped ? 'checked' : ''} data-flag="capped"> Cap</label>
+        </div>
+        <div class="dept-field-grid">
+          <label class="dept-field"><span>Sqft</span><input type="number" value="${d.sqft}" min="100" step="100" data-field="sqft"></label>
+          <label class="dept-field color-field"><span>Color</span><input type="color" value="${normalizeHex(d.color)}" data-field="color"></label>
+        </div>
       `;
       controls.querySelectorAll('input[data-flag]').forEach((input) => {
         input.addEventListener('change', () => {
@@ -680,7 +695,7 @@
         refresh(false);
       });
       const editBar = document.createElement('div');
-      editBar.className = 'inline-stack';
+      editBar.className = 'dept-button-row';
       const renameBtn = mkButton('Rename', 'ghost-btn', () => renameDept(d.id));
       const removeBtn = mkButton('Remove', 'ghost-btn danger', () => removeDept(d.id));
       editBar.append(renameBtn, removeBtn);
@@ -994,6 +1009,16 @@
       persistState();
       refresh();
     });
+    if (el.uiScaleRange) {
+      el.uiScaleRange.addEventListener('input', (e) => {
+        state.uiScale = Number(e.target.value);
+        applyUiScale();
+      });
+      el.uiScaleRange.addEventListener('change', () => {
+        persistState();
+        refresh(false);
+      });
+    }
     qs('#saveBrowserBtn').addEventListener('click', () => { persistState(true); });
     qs('#resetBtn').addEventListener('click', resetApp);
     qs('#exportJsonBtn').addEventListener('click', exportJson);
@@ -1021,6 +1046,7 @@
     state.iterations = defaultIterations();
     state.log = ['Reset to default state.'];
     state.dataSource = 'Built-in defaults';
+    state.uiScale = 100;
     localStorage.removeItem('gyrolux-html-state');
     refresh();
   }
@@ -1035,7 +1061,7 @@
       flowPairs: state.flowPairs, rewardPairs: state.rewardPairs, upperBound: state.upperBound,
       activeDept: state.activeDept, tool: state.tool, algo: state.algo, nc: state.nc, maxIt: state.maxIt,
       trials: state.trials, impIt: state.impIt, iterNotes: state.iterNotes, iterations: state.iterations,
-      log: state.log, dataSource: state.dataSource,
+      log: state.log, dataSource: state.dataSource, uiScale: state.uiScale,
       rect: { x1: Number(el.rectX1.value || 0), y1: Number(el.rectY1.value || 0), x2: Number(el.rectX2.value || 4), y2: Number(el.rectY2.value || 4) },
     };
   }
@@ -1058,6 +1084,7 @@
       state.rewardPairs = (data.rewardPairs || []).map((p) => ({ a: Number(p.a), b: Number(p.b), r: String(p.r || 'I').toUpperCase() })).filter((p) => p.a && p.b && p.a !== p.b);
       state.iterations = Array.isArray(data.iterations) && data.iterations.length === 5 ? data.iterations : defaultIterations();
       state.log = Array.isArray(data.log) ? data.log : ['Loaded local state.'];
+      state.uiScale = clamp(Number(data.uiScale || 100), 75, 135);
       if (data.rect) {
         el.rectX1.value = data.rect.x1 ?? 0;
         el.rectY1.value = data.rect.y1 ?? 0;
@@ -1307,6 +1334,7 @@
   }
 
   function syncInputs() {
+    applyUiScale();
     el.toolSelect.value = state.tool;
     el.notesInput.value = state.iterNotes || '';
     el.rectX1.value = el.rectX1.value || 0;
