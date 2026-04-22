@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GyroLux Layout Optimizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="appShell" class="app-shell">
+    <aside id="leftSidebar" class="sidebar left-sidebar" aria-label="Departments panel">
+      <div class="sidebar-header">
+        <div>
+          <div class="eyebrow">Departments</div>
+          <h2>Facility palette</h2>
+        </div>
+        <button id="closeLeftBtn" class="icon-btn" type="button" aria-label="Close departments panel">×</button>
+      </div>
+      <div class="sidebar-body">
+        <section class="panel-block">
+          <div class="block-head">
+            <h3>Selected department</h3>
+            <button id="addDeptBtn" class="ghost-btn" type="button">Add</button>
+          </div>
+          <div id="deptList" class="dept-list"></div>
+        </section>
+      </div>
+    </aside>
+
+    <aside id="rightSidebar" class="sidebar right-sidebar" aria-label="Workspace panel">
+      <div class="sidebar-header">
+        <div>
+          <div class="eyebrow">Workspace</div>
+          <h2>Algorithms, data, and review</h2>
+        </div>
+        <button id="closeRightBtn" class="icon-btn" type="button" aria-label="Close workspace panel">×</button>
+      </div>
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" data-tab="overview" type="button">Overview</button>
+        <button class="tab-btn" data-tab="algorithm" type="button">Algorithm</button>
+        <button class="tab-btn" data-tab="data" type="button">Data</button>
+        <button class="tab-btn" data-tab="iterations" type="button">Iterations</button>
+        <button class="tab-btn" data-tab="log" type="button">Log</button>
+      </div>
+      <div class="sidebar-body">
+        <section id="tab-overview" class="tab-panel active"></section>
+        <section id="tab-algorithm" class="tab-panel"></section>
+        <section id="tab-data" class="tab-panel"></section>
+        <section id="tab-iterations" class="tab-panel"></section>
+        <section id="tab-log" class="tab-panel"></section>
+      </div>
+    </aside>
+
+    <div id="overlay" class="overlay hidden"></div>
+
+    <main class="main-area">
+      <header class="page-header">
+        <div>
+          <div class="eyebrow">ISE 5244 · Facilities Planning & Material Handling</div>
+          <h1>GyroLux Layout Optimizer</h1>
+          <p class="subtle">Static HTML version. Client-side only. Cleaner UI, fewer moving parts, less Streamlit drama.</p>
+        </div>
+        <div class="header-actions">
+          <button id="openLeftBtn" class="panel-toggle" type="button">☰ Departments</button>
+          <button id="openRightBtn" class="panel-toggle" type="button">⚙ Workspace</button>
+        </div>
+      </header>
+
+      <section class="canvas-card">
+        <div class="canvas-toolbar">
+          <div class="toolbar-group compact-grid">
+            <label>
+              <span>Department</span>
+              <select id="activeDeptSelect"></select>
+            </label>
+            <label>
+              <span>Tool</span>
+              <select id="toolSelect">
+                <option value="rect">Paint</option>
+                <option value="erase">Erase</option>
+              </select>
+            </label>
+            <label>
+              <span>X1</span>
+              <input id="rectX1" type="number" min="0" step="1" />
+            </label>
+            <label>
+              <span>Y1</span>
+              <input id="rectY1" type="number" min="0" step="1" />
+            </label>
+            <label>
+              <span>X2</span>
+              <input id="rectX2" type="number" min="0" step="1" />
+            </label>
+            <label>
+              <span>Y2</span>
+              <input id="rectY2" type="number" min="0" step="1" />
+            </label>
+          </div>
+          <div class="toolbar-group">
+            <button id="paintRectBtn" class="primary-btn" type="button">Paint rect</button>
+            <button id="eraseRectBtn" class="ghost-btn" type="button">Erase rect</button>
+            <button id="clearGridBtn" class="ghost-btn danger" type="button">Clear unlocked cells</button>
+          </div>
+        </div>
+
+        <div class="canvas-wrapper">
+          <div id="gridStage" class="grid-stage">
+            <div id="gridBoard" class="grid-board" aria-label="Facility layout grid"></div>
+          </div>
+          <div class="grid-legend">
+            <div class="legend-row"><span class="legend-dot selected"></span> Drag on the grid to paint or erase a rectangle.</div>
+            <div class="legend-row"><span class="legend-dot locked"></span> Locked departments cannot be painted over.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="metrics-card">
+        <div class="metrics-header">
+          <div>
+            <div class="eyebrow">Performance</div>
+            <h2>Layout first. Metrics next.</h2>
+          </div>
+          <div id="buildSummary" class="build-summary"></div>
+        </div>
+        <div id="metricCards" class="metric-cards"></div>
+        <div class="analysis-grid">
+          <article class="panel-block">
+            <div class="block-head"><h3>Top flow contributors</h3></div>
+            <div id="flowContribTable"></div>
+          </article>
+          <article class="panel-block">
+            <div class="block-head"><h3>Adjacency review</h3></div>
+            <div id="adjacencyTable"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="bottom-bar">
+        <div class="bottom-row bottom-row-main">
+          <label class="notes-box">
+            <span>Current notes</span>
+            <input id="notesInput" type="text" placeholder="Write what changed in this version of the layout" />
+          </label>
+          <div class="bottom-actions">
+            <button id="saveBrowserBtn" class="ghost-btn" type="button">Save to browser</button>
+            <button id="resetBtn" class="ghost-btn danger" type="button">Reset app</button>
+          </div>
+        </div>
+        <div class="bottom-row">
+          <div class="slots-wrap">
+            <div class="eyebrow">Iteration slots</div>
+            <div id="iterationSlots" class="iteration-slots"></div>
+          </div>
+        </div>
+        <div class="bottom-row bottom-actions-wrap">
+          <div class="eyebrow">Import / export</div>
+          <div class="bottom-actions">
+            <label class="file-label">
+              <input id="workbookInput" type="file" accept=".xlsx,.xlsm,.json" hidden />
+              <span class="ghost-btn">Import workbook / JSON</span>
+            </label>
+            <button id="exportJsonBtn" class="ghost-btn" type="button">Export JSON</button>
+            <button id="exportWorkbookBtn" class="ghost-btn" type="button">Export XLSX</button>
+            <button id="downloadTemplateBtn" class="ghost-btn" type="button">Template XLSX</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="deptCardTemplate">
+    <article class="dept-card">
+      <div class="dept-card-top">
+        <button class="dept-select-btn" type="button"></button>
+        <span class="dept-swatch"></span>
+      </div>
+      <div class="dept-meta"></div>
+      <div class="dept-stats"></div>
+      <div class="dept-controls"></div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
