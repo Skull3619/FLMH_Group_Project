@@ -147,3 +147,109 @@ textarea.json-area { min-height: 180px; resize: vertical; width: 100%; border-ra
   .metric-cards, .analysis-grid, .iteration-slots, .kpi-list, .form-grid, .dept-field-grid, .dept-flag-grid { grid-template-columns: 1fr; }
   :root { --sidebar-width: 92vw; }
 }
+
+
+/* Fixed three-column layout patch */
+:root {
+  --left-rail: clamp(290px, calc(300px * var(--ui-scale)), 380px);
+  --right-rail: clamp(300px, calc(315px * var(--ui-scale)), 400px);
+}
+body {
+  overflow: hidden;
+}
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--left-rail) minmax(0, 1fr) var(--right-rail);
+  gap: 18px;
+  min-height: 100vh;
+  padding: 14px 18px 18px;
+  align-items: start;
+}
+.main-area {
+  max-width: none;
+  margin: 0;
+  min-width: 0;
+  padding: 8px 0 18px;
+  height: calc(100vh - 32px);
+  overflow: auto;
+}
+.sidebar {
+  position: sticky;
+  top: 14px;
+  bottom: auto;
+  width: auto;
+  height: calc(100vh - 32px);
+  transform: none !important;
+  transition: none;
+  z-index: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.left-sidebar,
+.right-sidebar {
+  left: auto;
+  right: auto;
+}
+.overlay,
+#openLeftBtn,
+#openRightBtn,
+#closeLeftBtn,
+#closeRightBtn {
+  display: none !important;
+}
+.sidebar-header {
+  padding: 12px 14px 10px;
+}
+.sidebar-body {
+  padding: 10px;
+}
+.page-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: linear-gradient(180deg, rgba(7,17,31,0.98), rgba(7,17,31,0.88) 75%, rgba(7,17,31,0));
+  padding-bottom: 14px;
+  margin-bottom: 10px;
+}
+.canvas-card,
+.metrics-card,
+.bottom-bar {
+  margin-bottom: 16px;
+}
+.metrics-card {
+  padding: 18px;
+}
+.bottom-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(18,31,53,0.94), rgba(10,19,33,0.98));
+  backdrop-filter: blur(10px);
+}
+@media (max-width: 1450px) {
+  :root {
+    --left-rail: clamp(260px, calc(270px * var(--ui-scale)), 330px);
+    --right-rail: clamp(270px, calc(285px * var(--ui-scale)), 350px);
+  }
+}
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+  .sidebar,
+  .main-area {
+    height: auto;
+    position: relative;
+    top: auto;
+  }
+  .left-sidebar,
+  .right-sidebar {
+    order: 0;
+  }
+  .main-area {
+    order: 1;
+    overflow: visible;
+  }
+}
