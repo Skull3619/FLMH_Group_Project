@@ -1,0 +1,1800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GyroLux Layout Optimizer — Flexible</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0b0e14;color:#e2e8f0;font-family:monospace;font-size:12px;overflow:hidden;height:100vh}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:#0b0e14}
+::-webkit-scrollbar-thumb{background:#1e2d45;border-radius:3px}
+select,input[type=number],input[type=text]{background:#0b0e14;border:1px solid #1e2d45;border-radius:4px;padding:4px 7px;color:#e2e8f0;font-family:monospace;font-size:11px;width:100%;box-sizing:border-box}
+select:focus,input:focus{outline:1px solid #3b82f6}
+input[type=checkbox]{width:auto;margin:0;cursor:pointer;accent-color:#f59e0b}
+canvas{display:block;image-rendering:pixelated}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useRef,useMemo}=React;
+
+const RV={E:4,A:3,O:2,I:1,U:0,X:-1};
+const RC={E:"#16a34a",A:"#65a30d",O:"#d97706",I:"#2563eb",U:"#64748b",X:"#dc2626"};
+const RL={E:"Especially important",A:"Important",O:"Ordinary",I:"Unimportant",U:"Unimportant",X:"Undesirable"};
+const SCALE=20;
+const PALETTE=["#2DD4BF","#4ADE80","#22C55E","#94A3B8","#60A5FA","#FB923C","#FBBF24","#A3E635","#FCD34D","#38BDF8","#C084FC","#9CA3AF","#F472B6","#F97316","#34D399","#818CF8","#FB7185","#67E8F9","#F59E0B","#A78BFA","#14B8A6","#84CC16","#06B6D4","#E879F9"];
+
+const DEFAULT_GRID={w:35,h:25,ft:10};
+const DEFAULT_DEPTS=[
+  {id:1,name:"Receiving",abbr:"RCV",color:"#2DD4BF",sqft:4000,capped:false,grow:false,shrink:false},
+  {id:2,name:"Raw Materials 1",abbr:"RM1",color:"#4ADE80",sqft:3200,capped:false,grow:false,shrink:false},
+  {id:3,name:"Raw Materials 2",abbr:"RM2",color:"#22C55E",sqft:5200,capped:false,grow:false,shrink:false},
+  {id:4,name:"Machining 1",abbr:"MC1",color:"#94A3B8",sqft:6000,capped:false,grow:false,shrink:false},
+  {id:5,name:"Machining 2",abbr:"MC2",color:"#60A5FA",sqft:6000,capped:false,grow:false,shrink:false},
+  {id:6,name:"Die Casting",abbr:"DC",color:"#FB923C",sqft:5000,capped:false,grow:false,shrink:false},
+  {id:7,name:"Assembly & Finishing",abbr:"A&F",color:"#FBBF24",sqft:14000,capped:false,grow:false,shrink:false},
+  {id:8,name:"Testing",abbr:"TST",color:"#A3E635",sqft:7900,capped:false,grow:false,shrink:false},
+  {id:9,name:"Finished Goods",abbr:"FG",color:"#FCD34D",sqft:8700,capped:false,grow:false,shrink:false},
+  {id:10,name:"Shipping",abbr:"SHP",color:"#38BDF8",sqft:4000,capped:false,grow:false,shrink:false},
+  {id:11,name:"Maintenance",abbr:"MNT",color:"#C084FC",sqft:2400,capped:false,grow:false,shrink:false},
+  {id:12,name:"Offices",abbr:"OFF",color:"#9CA3AF",sqft:6800,capped:false,grow:false,shrink:false},
+  {id:13,name:"Restrooms/Break Rm",abbr:"RST",color:"#F472B6",sqft:3000,capped:false,grow:false,shrink:false},
+];
+const DEFAULT_FLOW_MATRIX=[
+  [0,7,0,0,0,0,0,0,0,8],[7,0,0,120,0,0,0,0,0,0],[0,0,0,0,90,45,0,0,0,0],
+  [0,120,0,0,0,0,80,0,0,0],[0,0,90,0,0,0,90,0,0,0],[0,0,45,0,45,0,0,0,0,0],
+  [0,0,0,80,90,0,0,10,160,0],[0,0,0,0,0,0,10,0,10,0],[0,0,0,0,0,0,160,10,0,34],[8,0,0,0,0,0,0,0,34,0],
+];
+const DEFAULT_REWARD_PAIRS=[
+  {a:1,b:2,r:"E"},{a:1,b:10,r:"E"},{a:2,b:4,r:"E"},{a:3,b:5,r:"E"},{a:3,b:6,r:"I"},{a:4,b:7,r:"A"},{a:5,b:7,r:"A"},{a:6,b:5,r:"I"},
+  {a:7,b:8,r:"O"},{a:7,b:9,r:"A"},{a:8,b:9,r:"O"},{a:9,b:10,r:"E"},{a:11,b:4,r:"I"},{a:11,b:5,r:"I"},{a:11,b:6,r:"I"},
+  {a:12,b:5,r:"X"},{a:12,b:6,r:"X"},{a:12,b:4,r:"X"},{a:13,b:4,r:"X"},{a:13,b:5,r:"X"},{a:13,b:12,r:"A"},
+];
+const DEFAULT_FLOW_PAIRS=matrixToPairs(DEFAULT_FLOW_MATRIX,DEFAULT_DEPTS.slice(0,10).map(d=>d.id));
+const ALGO_META={
+  craft:{label:"CRAFT — Pairwise Exchange",needs:["flow"],fixedObj:"dscore",blurb:"Needs D-score pair data from the workbook and improves layouts by pairwise swaps."},
+  random:{label:"Random Multi-Start + CRAFT",needs:["flow"],fixedObj:"dscore",blurb:"Shuffles department orders, improves each with CRAFT, and keeps the best D-score result."},
+  corelap:{label:"CORELAP — TCR Placement",needs:["adj"],fixedObj:"ascore",blurb:"Uses adjacency / REL data only and places high-closeness departments first."},
+  aldep:{label:"ALDEP — Adjacency Layout",needs:["adj"],fixedObj:"ascore",blurb:"Builds adjacency-driven alternatives from the REL data and keeps the best one."},
+  blocplan:{label:"BLOCPLAN — Block Planner",needs:["adj"],fixedObj:"ascore",blurb:"Creates a block-style adjacency order, then refines it for a stronger A-score."},
+  hybrid:{label:"Hybrid REL + D-Score",needs:["flow","adj"],fixedObj:"hybrid",blurb:"Uses both D-score and adjacency data in a combined local objective."},
+};
+
+const BROWSER_SAVE_KEY="gyrolux_layout_optimizer_browser_save_v8_matrix";
+
+function normalizeKey(v){
+  return String(v??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+}
+
+function parseBoolish(v){
+  const s=normalizeKey(v);
+  return ["1","true","yes","y","on"].includes(s);
+}
+
+function toNumber(v){
+  const n=Number(String(v??"").replace(/,/g,""));
+  return Number.isFinite(n)?n:null;
+}
+
+function getField(row,aliases){
+  const entries=Object.entries(row||{});
+  for(const alias of aliases){
+    const match=entries.find(([k])=>normalizeKey(k)===normalizeKey(alias));
+    if(match)return match[1];
+  }
+  return undefined;
+}
+
+function getRewardValue(pair){
+  if(pair&&pair.value!==undefined&&pair.value!==null){
+    const n=Number(pair.value);
+    if(Number.isFinite(n))return n;
+  }
+  return RV[pair?.r]||0;
+}
+
+function getRewardToken(pair){
+  if(pair?.r!==undefined&&pair?.r!==null&&String(pair.r).trim())return String(pair.r).toUpperCase();
+  if(pair?.value!==undefined&&pair?.value!==null)return String(pair.value);
+  return "";
+}
+
+function getRewardMeaning(pair){
+  const token=getRewardToken(pair);
+  if(RL[token])return RL[token];
+  if(pair?.value!==undefined&&pair?.value!==null)return `Numeric weight ${pair.value}`;
+  return token||"Custom";
+}
+
+function metricObjective(obj,ds,as,flowPairs,rewardPairs){
+  if(obj==="dscore")return ds;
+  if(obj==="ascore")return -as;
+  const flowScale=Math.max(1,(flowPairs||[]).reduce((s,p)=>s+Math.abs(Number(p.flow)||0),0)*10);
+  const adjScale=Math.max(1,(rewardPairs||[]).reduce((s,p)=>s+Math.abs(getRewardValue(p)),0));
+  return ds/flowScale - as/adjScale;
+}
+
+function findSheetName(sheetNames,aliases){
+  const wanted=new Set((aliases||[]).map(normalizeKey));
+  return (sheetNames||[]).find(name=>wanted.has(normalizeKey(name)));
+}
+
+function buildDeptResolver(depts){
+  const map=new Map();
+  (depts||[]).forEach(d=>{
+    [d.id,String(d.id),d.name,d.abbr].forEach(v=>{
+      const key=normalizeKey(v);
+      if(key&&!map.has(key))map.set(key,d.id);
+    });
+  });
+  return ref=>{
+    const key=normalizeKey(ref);
+    if(!key)return null;
+    return map.get(key)||null;
+  };
+}
+
+function normalizeRelation(raw){
+  if(raw===undefined||raw===null)return null;
+  const s=String(raw).trim();
+  if(!s)return null;
+  const upper=s.toUpperCase();
+  if(["A","E","I","O","U","X"].includes(upper))return {r:upper};
+  const n=toNumber(s);
+  if(n===null)return {r:upper};
+  if(n===0)return null;
+  return {value:n,r:upper};
+}
+
+function parseDepartmentsSheet(sheet,fallbackDepts=[]){
+  const rows=XLSX.utils.sheet_to_json(sheet,{defval:""});
+  const out=[];
+  let autoId=1;
+  rows.forEach((row,idx)=>{
+    const name=String(getField(row,["name","department","dept","departmentname"])||"").trim();
+    if(!name)return;
+    let id=toNumber(getField(row,["id","deptid","departmentid"]));
+    if(id===null||out.some(d=>d.id===id)){
+      while(out.some(d=>d.id===autoId))autoId++;
+      id=autoId;
+      autoId++;
+    }
+    const sqft=Math.max(1,toNumber(getField(row,["sqft","requiredspace","requiredsqft","space","area"]))??2000);
+    out.push({
+      id,
+      name,
+      abbr:normalizeAbbr(name,getField(row,["abbr","abbreviation","code","short"]),id),
+      sqft,
+      color:String(getField(row,["color","colour"])||nextColor(idx)).trim()||nextColor(idx),
+      capped:parseBoolish(getField(row,["capped","cap","max","maxtarget"])),
+      grow:parseBoolish(getField(row,["grow","cangrow","allowgrow"])),
+      shrink:parseBoolish(getField(row,["shrink","canshrink","allowshrink"])),
+      locked:parseBoolish(getField(row,["locked","lock","islocked","fixed","pin","pinned"])),
+    });
+  });
+  if(!out.length)throw new Error("The Departments sheet was found, but it does not contain any usable rows.");
+  return out;
+}
+
+function parsePairSheet(sheet,resolver,kind){
+  const rows=XLSX.utils.sheet_to_json(sheet,{defval:""});
+  const out=[];
+  const seen=new Set();
+  rows.forEach((row,idx)=>{
+    const rawA=getField(row,["depta","from","a","departmenta","dept1","fromdept","source"]);
+    const rawB=getField(row,["deptb","to","b","departmentb","dept2","todept","target"]);
+    if(rawA===""&&rawB==="")return;
+    const a=resolver(rawA), b=resolver(rawB);
+    if(!a||!b)throw new Error(`Workbook row ${idx+2} references a department that is not defined in Departments.`);
+    if(a===b)return;
+    const key=`${Math.min(a,b)}_${Math.max(a,b)}`;
+    if(seen.has(key))return;
+    if(kind==="flow"){
+      const flow=toNumber(getField(row,["flow","score","weight","dscore","distance","load","volume"]));
+      if(flow===null||flow===0)return;
+      out.push({a,b,flow});
+    }else{
+      const rel=normalizeRelation(getField(row,["rating","rel","reward","adjacency","closeness","relationship","score","value"]));
+      if(!rel)return;
+      out.push({a,b,...rel});
+    }
+    seen.add(key);
+  });
+  return out;
+}
+
+function parseMatrixSheet(sheet,resolver,kind){
+  const aoa=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
+  if(!aoa.length||aoa[0].length<2)return [];
+  const colLabels=aoa[0].slice(1);
+  const out=[];
+  const seen=new Set();
+  for(let r=1;r<aoa.length;r++){
+    const rowLabel=aoa[r][0];
+    const a=resolver(rowLabel);
+    if(!a)continue;
+    for(let c=1;c<Math.min(aoa[r].length,colLabels.length+1);c++){
+      const b=resolver(colLabels[c-1]);
+      if(!b||a===b)continue;
+      const key=`${Math.min(a,b)}_${Math.max(a,b)}`;
+      if(seen.has(key))continue;
+      const raw=aoa[r][c];
+      if(kind==="flow"){
+        const flow=toNumber(raw);
+        if(flow===null||flow===0)continue;
+        out.push({a,b,flow});
+      }else{
+        const rel=normalizeRelation(raw);
+        if(!rel)continue;
+        out.push({a,b,...rel});
+      }
+      seen.add(key);
+    }
+  }
+  return out;
+}
+
+function parseLayoutSheet(sheet,resolver,grid){
+  const aoa=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
+  if(!aoa.length)return null;
+  const directOk=aoa.length>=grid.h && aoa.some(row=>row.length>=grid.w);
+  const labeledOk=aoa.length>=grid.h+1 && aoa[0] && aoa[0].length>=grid.w+1;
+  let rowStart=0,colStart=0;
+  if(labeledOk){
+    rowStart=1;
+    colStart=1;
+  }else if(!directOk){
+    return null;
+  }
+  const cells=initCells(grid);
+  for(let y=0;y<grid.h;y++){
+    for(let x=0;x<grid.w;x++){
+      const raw=aoa[y+rowStart]?.[x+colStart];
+      const id=resolver(raw);
+      cells[y*grid.w+x]=id||0;
+    }
+  }
+  return cells;
+}
+
+function parseMetaSheet(sheet,fallbackGrid,fallbackUpperBound=true){
+  const aoa=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
+  const kv={};
+  aoa.forEach(row=>{
+    if(row?.length>=2&&String(row[0]||"").trim())kv[normalizeKey(row[0])]=row[1];
+  });
+  const width=toNumber(kv.gridwidth??kv.width??kv.cellswide??kv.w);
+  const height=toNumber(kv.gridheight??kv.height??kv.cellstall??kv.h);
+  const ft=toNumber(kv.feetpercell??kv.ftpercell??kv.ft??kv.cellsize);
+  const upperBoundRaw=kv.enforceupperbound??kv.upperbound??kv.upperbounds??kv.enableupperbound??kv.capenforced;
+  const upperBound=upperBoundRaw===undefined||upperBoundRaw===""?fallbackUpperBound:parseBoolish(upperBoundRaw);
+  if(width===null&&height===null&&ft===null&&upperBoundRaw===undefined)return {grid:fallbackGrid,upperBound:fallbackUpperBound};
+  return {
+    grid:{
+      w:clamp(width??fallbackGrid.w,5,120),
+      h:clamp(height??fallbackGrid.h,5,120),
+      ft:clamp(ft??fallbackGrid.ft,1,100),
+    },
+    upperBound,
+  };
+}
+
+function loadWorkbookData(workbook,fallbackDepts,fallbackGrid,fallbackUpperBound=true){
+  const names=workbook?.SheetNames||[];
+  const deptSheet=findSheetName(names,["departments","department","depts"]);
+  const flowPairSheet=findSheetName(names,["flowpairs","flow_pairs","dscorepairs","distancepairs","distancescores","dscore"]);
+  const flowMatrixSheet=findSheetName(names,["flowmatrix","flow_matrix","dscorematrix","distancematrix","distancescorematrix"]);
+  const rewardPairSheet=findSheetName(names,["rewardpairs","reward_pairs","adjacencypairs","relpairs","relationshippairs","closenesspairs","relchart"]);
+  const rewardMatrixSheet=findSheetName(names,["rewardmatrix","reward_matrix","adjacencymatrix","relmatrix","relationshipmatrix","closenessmatrix","adjacencychart"]);
+  const layoutSheet=findSheetName(names,["layout","gridlayout","blocklayout","cells","plan"]);
+  const metaSheet=findSheetName(names,["meta","settings","grid"]);
+  let depts=fallbackDepts;
+  const warnings=[];
+  if(deptSheet)depts=parseDepartmentsSheet(workbook.Sheets[deptSheet],fallbackDepts);
+  const resolver=buildDeptResolver(depts);
+  const flowPairs=flowPairSheet?parsePairSheet(workbook.Sheets[flowPairSheet],resolver,"flow"):(flowMatrixSheet?parseMatrixSheet(workbook.Sheets[flowMatrixSheet],resolver,"flow"):[]);
+  const rewardPairs=rewardPairSheet?parsePairSheet(workbook.Sheets[rewardPairSheet],resolver,"reward"):(rewardMatrixSheet?parseMatrixSheet(workbook.Sheets[rewardMatrixSheet],resolver,"reward"):[]);
+  if(!deptSheet)warnings.push("No Departments sheet found. Existing department list was kept.");
+  if(!flowPairSheet&&!flowMatrixSheet)warnings.push("No D-score/flow sheet found. Flow-based algorithms will refuse to run.");
+  if(!rewardPairSheet&&!rewardMatrixSheet)warnings.push("No adjacency/REL sheet found. Adjacency-based algorithms will refuse to run.");
+  const meta=metaSheet?parseMetaSheet(workbook.Sheets[metaSheet],fallbackGrid,fallbackUpperBound):{grid:fallbackGrid,upperBound:fallbackUpperBound};
+  const grid=meta.grid||fallbackGrid;
+  const upperBound=meta.upperBound!==undefined?meta.upperBound:fallbackUpperBound;
+  const cells=layoutSheet?parseLayoutSheet(workbook.Sheets[layoutSheet],resolver,grid):null;
+  const lockedIds=depts.filter(d=>d.locked).map(d=>d.id);
+  if(lockedIds.length&&!cells)warnings.push("Locked departments were listed in Departments, but no Layout sheet was found. Those locks will activate once you paint those departments.");
+  return {depts,flowPairs,rewardPairs,grid,upperBound,cells,lockedIds,warnings,sheets:names};
+}
+
+function validateAlgorithmData(algo,flowPairs,rewardPairs){
+  const meta=ALGO_META[algo]||{needs:[]};
+  if(meta.needs.includes("flow")&&!(flowPairs||[]).length){
+    return {ok:false,msg:"This algorithm needs D-score data in the workbook, such as FlowPairs / FlowMatrix / DScore / Distance sheets."};
+  }
+  if(meta.needs.includes("adj")&&!(rewardPairs||[]).length){
+    return {ok:false,msg:"This algorithm needs adjacency data in the workbook, such as RewardPairs / RewardMatrix / Adjacency / REL sheets."};
+  }
+  return {ok:true,msg:""};
+}
+
+function matrixToPairs(matrix,deptIds){
+  const out=[];
+  for(let i=0;i<matrix.length;i++){
+    for(let j=i+1;j<matrix[i].length;j++){
+      const v=Math.max(matrix[i][j]||0,(matrix[j]&&matrix[j][i])||0);
+      if(v)out.push({a:deptIds[i],b:deptIds[j],flow:v});
+    }
+  }
+  return out;
+}
+
+function initCells(grid){
+  return new Array(grid.w*grid.h).fill(0);
+}
+
+function resizeCells(prev,oldGrid,newGrid){
+  const next=initCells(newGrid);
+  const w=Math.min(oldGrid.w,newGrid.w);
+  const h=Math.min(oldGrid.h,newGrid.h);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++) next[y*newGrid.w+x]=prev[y*oldGrid.w+x]||0;
+  return next;
+}
+
+function cellArea(grid){
+  return grid.ft*grid.ft;
+}
+
+function clamp(n,min,max){
+  return Math.max(min,Math.min(max,n));
+}
+
+function nextDeptId(depts){
+  return depts.length?Math.max(...depts.map(d=>d.id))+1:1;
+}
+
+function nextColor(index){
+  return PALETTE[index%PALETTE.length];
+}
+
+function normalizeAbbr(name,abbr,id){
+  const base=(abbr||name||`D${id}`).toUpperCase().replace(/[^A-Z0-9&]/g,"");
+  return (base||`D${id}`).slice(0,4);
+}
+
+function getDeptMap(depts){
+  return Object.fromEntries(depts.map(d=>[d.id,d]));
+}
+
+function countCells(cells){
+  const out={};
+  cells.forEach(id=>{if(id)out[id]=(out[id]||0)+1;});
+  return out;
+}
+
+function targetCells(dept,grid){
+  return Math.max(1,Math.round((Number(dept?.sqft)||0)/cellArea(grid)));
+}
+
+function getLockedData(cells,lockedDeptIds,grid){
+  const requested=new Set(lockedDeptIds||[]);
+  const cellOwner=new Array(grid.w*grid.h).fill(0);
+  const byDept=[];
+  requested.forEach(id=>{
+    const indices=[];
+    let minX=grid.w,minY=grid.h,maxX=-1,maxY=-1;
+    cells.forEach((cellId,idx)=>{
+      if(cellId!==id)return;
+      indices.push(idx);
+      const x=idx%grid.w,y=Math.floor(idx/grid.w);
+      if(x<minX)minX=x;
+      if(y<minY)minY=y;
+      if(x>maxX)maxX=x;
+      if(y>maxY)maxY=y;
+      cellOwner[idx]=id;
+    });
+    if(indices.length){
+      byDept.push({
+        id,
+        indices,
+        bounds:{x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1},
+        sqft:indices.length*cellArea(grid),
+      });
+    }
+  });
+  const ids=byDept.map(d=>d.id);
+  return {ids,idSet:new Set(ids),cellOwner,byDept,lockedCount:byDept.reduce((s,d)=>s+d.indices.length,0)};
+}
+
+function isLockedCell(x,y,cellOwner,grid){
+  return !!cellOwner[y*grid.w+x];
+}
+
+function scoreCells(cells,grid,depts,flowPairs,rewardPairs){
+  const dm=getDeptMap(depts);
+  const cx={},cy={},cc={};
+  cells.forEach((id,idx)=>{
+    if(!id||!dm[id])return;
+    const gx=idx%grid.w,gy=Math.floor(idx/grid.w);
+    cx[id]=(cx[id]||0)+gx+0.5;
+    cy[id]=(cy[id]||0)+gy+0.5;
+    cc[id]=(cc[id]||0)+1;
+  });
+  let ds=0;
+  const dpairs=[];
+  (flowPairs||[]).forEach(({a,b,flow})=>{
+    if(!flow||!cc[a]||!cc[b])return;
+    const dx=(cx[a]/cc[a]-cx[b]/cc[b])*grid.ft;
+    const dy=(cy[a]/cc[a]-cy[b]/cc[b])*grid.ft;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    ds+=flow*d;
+    dpairs.push({from:a,to:b,flow,dist:Math.round(d),contrib:Math.round(flow*d)});
+  });
+  const adjSet=new Set();
+  cells.forEach((id,idx)=>{
+    if(!id||!dm[id])return;
+    const gx=idx%grid.w,gy=Math.floor(idx/grid.w);
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{
+      const nx=gx+dx,ny=gy+dy;
+      if(nx<0||nx>=grid.w||ny<0||ny>=grid.h)return;
+      const nid=cells[ny*grid.w+nx];
+      if(nid&&nid!==id&&dm[nid])adjSet.add(`${Math.min(id,nid)}_${Math.max(id,nid)}`);
+    });
+  });
+  let as=0;
+  const adetails=(rewardPairs||[]).map(pair=>{
+    const {a,b}=pair;
+    const adj=adjSet.has(`${Math.min(a,b)}_${Math.max(a,b)}`);
+    const val=adj?getRewardValue(pair):0;
+    as+=val;
+    return {a,b,r:getRewardToken(pair),meaning:getRewardMeaning(pair),adj,val};
+  });
+  const dsqft={};
+  cells.forEach(id=>{if(id&&dm[id])dsqft[id]=(dsqft[id]||0)+cellArea(grid);});
+  return {ds:Math.round(ds),as,dpairs,adetails,adjSet,dsqft};
+}
+
+function computeDesiredCells(ids,depts,grid,lockedData,upperBoundOn=true){
+  const dm=getDeptMap(depts);
+  const freeIds=ids.filter(id=>dm[id]&&!lockedData.idSet.has(id));
+  const available=grid.w*grid.h-(lockedData?.lockedCount||0);
+  const counts={};
+  freeIds.forEach(id=>counts[id]=targetCells(dm[id],grid));
+  let total=freeIds.reduce((s,id)=>s+(counts[id]||0),0);
+  if(total>available){
+    let needCut=total-available;
+    const shrinkFirst=freeIds.filter(id=>dm[id]?.shrink);
+    const all=freeIds;
+    const cutFrom=list=>{
+      let changed=true;
+      while(needCut>0&&changed){
+        changed=false;
+        for(const id of list){
+          if(needCut<=0)break;
+          if((counts[id]||0)>1){counts[id]-=1;needCut--;changed=true;}
+        }
+      }
+    };
+    cutFrom(shrinkFirst);
+    if(needCut>0)cutFrom(all);
+    total=freeIds.reduce((s,id)=>s+(counts[id]||0),0);
+  }
+  if(total<available){
+    let extra=available-total;
+    const growers=freeIds.filter(id=>dm[id]?.grow&&(!upperBoundOn||!dm[id]?.capped));
+    if(growers.length){
+      let k=0;
+      while(extra>0){
+        const id=growers[k%growers.length];
+        counts[id]=(counts[id]||0)+1;
+        extra--;
+        k++;
+      }
+    }
+  }
+  return counts;
+}
+
+function buildLayoutCells(ids,nc,grid,depts,lockedData,upperBoundOn=true){
+  const dm=getDeptMap(depts);
+  const cells=initCells(grid);
+  (lockedData?.byDept||[]).forEach(({id,indices})=>indices.forEach(idx=>{cells[idx]=id;}));
+  const freeIds=ids.filter(id=>dm[id]&&!lockedData.idSet.has(id));
+  if(!freeIds.length)return cells;
+  const desired=computeDesiredCells(ids,depts,grid,lockedData,upperBoundOn);
+  const cols=Math.max(1,Math.min(Number(nc)||1,grid.w));
+  const colLists=[];
+  for(let c=0;c<cols;c++){
+    const x0=Math.floor(c*grid.w/cols);
+    const x1=Math.floor((c+1)*grid.w/cols);
+    const list=[];
+    for(let y=0;y<grid.h;y++){
+      for(let x=x0;x<x1;x++){
+        const idx=y*grid.w+x;
+        if(!(lockedData?.cellOwner||[])[idx])list.push(idx);
+      }
+    }
+    colLists.push(list);
+  }
+  const buckets=Array.from({length:cols},()=>[]);
+  freeIds.forEach((id,i)=>buckets[i%cols].push(id));
+  const pos=Array(cols).fill(0);
+  for(let c=0;c<cols;c++){
+    let spill=c;
+    for(const id of buckets[c]){
+      let need=desired[id]||0;
+      while(need>0&&spill<cols){
+        while(need>0&&pos[spill]<colLists[spill].length){
+          cells[colLists[spill][pos[spill]++]]=id;
+          need--;
+        }
+        if(need>0)spill++;
+      }
+    }
+  }
+  return cells;
+}
+
+function evalIds(ids,nc,obj,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn=true){
+  const cells=buildLayoutCells(ids,nc,grid,depts,lockedData,upperBoundOn);
+  const {ds,as}=scoreCells(cells,grid,depts,flowPairs,rewardPairs);
+  return {objVal:metricObjective(obj,ds,as,flowPairs,rewardPairs),ds,as};
+}
+
+function runCRAFT(ids0,nc,maxIt,obj,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn=true){
+  let ids=[...ids0];
+  let ev=evalIds(ids,nc,obj,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+  const hist=[{iter:0,ds:ev.ds,as:ev.as}];
+  const lockedIds=lockedData?.idSet||new Set();
+  const fi=ids.map((id,i)=>({id,i})).filter(({id})=>!lockedIds.has(id)).map(({i})=>i);
+  let improved=true,iter=0;
+  while(improved&&iter<maxIt){
+    improved=false;
+    outer:for(let a=0;a<fi.length;a++) for(let b=a+1;b<fi.length;b++){
+      const ni=[...ids];
+      [ni[fi[a]],ni[fi[b]]]=[ni[fi[b]],ni[fi[a]]];
+      const ne=evalIds(ni,nc,obj,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+      if(ne.objVal<ev.objVal-1e-9){
+        ids=ni;ev=ne;improved=true;hist.push({iter:iter+1,ds:ev.ds,as:ev.as});
+        break outer;
+      }
+    }
+    iter++;
+  }
+  return {ids,iter,hist,ds:ev.ds,as:ev.as};
+}
+
+function buildAdjacencyTotals(depts,rewardPairs){
+  const totals=Object.fromEntries((depts||[]).map(d=>[d.id,0]));
+  (rewardPairs||[]).forEach(pair=>{
+    const w=getRewardValue(pair);
+    if(totals[pair.a]!==undefined)totals[pair.a]+=w;
+    if(totals[pair.b]!==undefined)totals[pair.b]+=w;
+  });
+  return totals;
+}
+
+function relationBetween(a,b,rewardPairs){
+  for(const pair of rewardPairs||[]){
+    if((pair.a===a&&pair.b===b)||(pair.a===b&&pair.b===a))return getRewardValue(pair);
+  }
+  return 0;
+}
+
+function greedyAdjacencyOrder(depts,rewardPairs,lockedData,randomize=false){
+  const lockedIds=lockedData?.ids||[];
+  const lockedSet=lockedData?.idSet||new Set();
+  const freeIds=depts.filter(d=>!lockedSet.has(d.id)).map(d=>d.id);
+  if(!freeIds.length)return [...lockedIds];
+  const totals=buildAdjacencyTotals(depts,rewardPairs);
+  let remaining=[...freeIds];
+  remaining.sort((a,b)=>totals[b]-totals[a]);
+  let seed=remaining.shift();
+  if(randomize&&remaining.length){
+    const top=[seed,...remaining.slice(0,Math.min(2,remaining.length))];
+    seed=top[Math.floor(Math.random()*top.length)];
+    remaining=freeIds.filter(id=>id!==seed);
+  }
+  const order=[seed];
+  while(remaining.length){
+    remaining.sort((a,b)=>{
+      const sa=order.reduce((s,id)=>s+relationBetween(a,id,rewardPairs),0)+(randomize?Math.random()*0.25:0);
+      const sb=order.reduce((s,id)=>s+relationBetween(b,id,rewardPairs),0)+(randomize?Math.random()*0.25:0);
+      return sb-sa;
+    });
+    order.push(remaining.shift());
+  }
+  return [...lockedIds,...order];
+}
+
+function pairKey(a,b){
+  return `${Math.min(a,b)}_${Math.max(a,b)}`;
+}
+
+function buildPairTokenLookup(pairs,kind="flow"){
+  const out={};
+  (pairs||[]).forEach(pair=>{
+    const key=pairKey(pair.a,pair.b);
+    out[key]=kind==="flow"?String(pair.flow??""):getRewardToken(pair);
+  });
+  return out;
+}
+
+function setFlowPairValueInList(pairs,a,b,raw){
+  const key=pairKey(a,b);
+  const filtered=(pairs||[]).filter(pair=>pairKey(pair.a,pair.b)!==key);
+  const trimmed=String(raw??"").trim();
+  if(!trimmed)return filtered;
+  const flow=Number(trimmed);
+  if(!Number.isFinite(flow)||flow===0)return filtered;
+  return [...filtered,{a:Math.min(a,b),b:Math.max(a,b),flow}].sort((p,q)=>p.a-q.a||p.b-q.b);
+}
+
+function setRewardPairValueInList(pairs,a,b,raw){
+  const key=pairKey(a,b);
+  const filtered=(pairs||[]).filter(pair=>pairKey(pair.a,pair.b)!==key);
+  const rel=normalizeRelation(raw);
+  if(!rel)return filtered;
+  return [...filtered,{a:Math.min(a,b),b:Math.max(a,b),...rel}].sort((p,q)=>p.a-q.a||p.b-q.b);
+}
+
+function runCORELAP(nc,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn=true){
+  const ids=greedyAdjacencyOrder(depts,rewardPairs,lockedData,false);
+  const res=runCRAFT(ids,nc,12,"ascore",grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+  return {...res,iter:Math.max(1,res.iter)};
+}
+
+function runALDEP(nc,trials,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn=true){
+  let best=null;
+  for(let t=0;t<trials;t++){
+    const ids=greedyAdjacencyOrder(depts,rewardPairs,lockedData,true);
+    const res=runCRAFT(ids,nc,10,"ascore",grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+    if(!best||res.as>best.as||(res.as===best.as&&res.ds<best.ds))best=res;
+  }
+  return best;
+}
+
+function runBLOCPLAN(nc,maxIt,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn=true){
+  const ids=greedyAdjacencyOrder(depts,rewardPairs,lockedData,false);
+  const res=runCRAFT(ids,nc,maxIt,"ascore",grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+  return {...res,iter:Math.max(1,res.iter)};
+}
+
+function runRandom(nc,trials,impIt,obj,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn=true){
+  const lockedIds=lockedData?.ids||[];
+  const lockedSet=lockedData?.idSet||new Set();
+  const freeIds=depts.filter(d=>!lockedSet.has(d.id)).map(d=>d.id);
+  let best=null;
+  for(let t=0;t<trials;t++){
+    const rand=[...lockedIds,...[...freeIds].sort(()=>Math.random()-0.5)];
+    const res=runCRAFT(rand,nc,impIt,obj,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+    if(!best||metricObjective(obj,res.ds,res.as,flowPairs,rewardPairs)<metricObjective(obj,best.ds,best.as,flowPairs,rewardPairs))best=res;
+  }
+  return best;
+}
+
+function runHybrid(nc,maxIt,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn=true){
+  const lockedIds=lockedData?.ids||[];
+  const lockedSet=lockedData?.idSet||new Set();
+  const combined=Object.fromEntries(depts.map(d=>[d.id,0]));
+  (rewardPairs||[]).forEach(pair=>{
+    const v=getRewardValue(pair)*10;
+    if(combined[pair.a]!==undefined)combined[pair.a]+=v;
+    if(combined[pair.b]!==undefined)combined[pair.b]+=v;
+  });
+  (flowPairs||[]).forEach(({a,b,flow})=>{
+    if(combined[a]!==undefined)combined[a]+=flow;
+    if(combined[b]!==undefined)combined[b]+=flow;
+  });
+  const freeIds=depts.filter(d=>!lockedSet.has(d.id)).sort((a,b)=>combined[b.id]-combined[a.id]).map(d=>d.id);
+  return runCRAFT([...lockedIds,...freeIds],nc,maxIt,"hybrid",grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+}
+
+function hexToRgb(hex){
+  const h=(hex||"#94a3b8").replace("#","");
+  const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+  return `${r},${g},${b}`;
+}
+
+function drawCanvas(canvas,cells,activeDept,tool,preview,showGrid,grid,depts,lockedIdSet){
+  if(!canvas)return;
+  const scale=canvas.width/grid.w;
+  const ctx=canvas.getContext("2d");
+  const dm=getDeptMap(depts);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(let y=0;y<grid.h;y++){
+    for(let x=0;x<grid.w;x++){
+      const id=cells[y*grid.w+x];
+      const dept=dm[id];
+      ctx.fillStyle=dept?`rgba(${hexToRgb(dept.color)},0.82)`:"#0a0e17";
+      ctx.fillRect(x*scale,y*scale,scale,scale);
+    }
+  }
+  if(showGrid){
+    ctx.strokeStyle="rgba(0,0,0,0.35)";
+    ctx.lineWidth=0.6;
+    for(let x=0;x<=grid.w;x++){ctx.beginPath();ctx.moveTo(x*scale,0);ctx.lineTo(x*scale,grid.h*scale);ctx.stroke();}
+    for(let y=0;y<=grid.h;y++){ctx.beginPath();ctx.moveTo(0,y*scale);ctx.lineTo(grid.w*scale,y*scale);ctx.stroke();}
+  }
+  const sx={},sy={},sc={};
+  cells.forEach((id,idx)=>{
+    if(!id||!dm[id])return;
+    const gx=idx%grid.w,gy=Math.floor(idx/grid.w);
+    sx[id]=(sx[id]||0)+gx; sy[id]=(sy[id]||0)+gy; sc[id]=(sc[id]||0)+1;
+  });
+  Object.keys(sc).forEach(id=>{
+    const n=sc[id]; if(n<2)return;
+    const dept=dm[id]; if(!dept)return;
+    const cx=(sx[id]/n+0.5)*scale, cy=(sy[id]/n+0.5)*scale;
+    const fs=Math.max(9,Math.min(15,scale*0.65));
+    ctx.save();
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.font=`bold ${fs}px monospace`;
+    ctx.fillStyle="rgba(0,0,0,0.75)";
+    ctx.fillText(dept.abbr,cx,cy-(n>8?fs*0.55:0));
+    if(n>8){
+      ctx.font=`${fs*0.7}px monospace`;
+      ctx.fillStyle="rgba(0,0,0,0.55)";
+      ctx.fillText(`${(n*cellArea(grid)/1000).toFixed(1)}K`,cx,cy+fs*0.6);
+    }
+    ctx.restore();
+  });
+  if(lockedIdSet?.size){
+    ctx.save();
+    ctx.strokeStyle="rgba(251,146,60,0.95)";
+    ctx.lineWidth=2;
+    ctx.setLineDash([5,3]);
+    ctx.beginPath();
+    for(let y=0;y<grid.h;y++){
+      for(let x=0;x<grid.w;x++){
+        const id=cells[y*grid.w+x];
+        if(!lockedIdSet.has(id))continue;
+        const left=x===0?0:cells[y*grid.w+x-1];
+        const right=x===grid.w-1?0:cells[y*grid.w+x+1];
+        const up=y===0?0:cells[(y-1)*grid.w+x];
+        const down=y===grid.h-1?0:cells[(y+1)*grid.w+x];
+        if(left!==id){ctx.moveTo(x*scale,y*scale);ctx.lineTo(x*scale,(y+1)*scale);}
+        if(right!==id){ctx.moveTo((x+1)*scale,y*scale);ctx.lineTo((x+1)*scale,(y+1)*scale);}
+        if(up!==id){ctx.moveTo(x*scale,y*scale);ctx.lineTo((x+1)*scale,y*scale);}
+        if(down!==id){ctx.moveTo(x*scale,(y+1)*scale);ctx.lineTo((x+1)*scale,(y+1)*scale);}
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  if(preview){
+    const dept=dm[activeDept];
+    const px=Math.min(preview.x1,preview.x2)*scale;
+    const py=Math.min(preview.y1,preview.y2)*scale;
+    const pw=(Math.abs(preview.x2-preview.x1)+1)*scale;
+    const ph=(Math.abs(preview.y2-preview.y1)+1)*scale;
+    ctx.save();
+    ctx.fillStyle=dept?`rgba(${hexToRgb(dept.color)},0.3)`:"rgba(255,255,255,0.15)";
+    ctx.fillRect(px,py,pw,ph);
+    ctx.strokeStyle=dept?.color||"#fff";
+    ctx.lineWidth=2;
+    ctx.setLineDash([]);
+    ctx.strokeRect(px,py,pw,ph);
+    ctx.restore();
+  }
+}
+
+function doExport(cells,grid,depts,flowPairs,rewardPairs,scoreState,algo,obj,lockedDeptIds,upperBoundOn=true){
+  const {ds,as,dpairs,adetails,dsqft}=scoreState;
+  const wb=XLSX.utils.book_new();
+  const dm=getDeptMap(depts);
+  const gridSheet=Array.from({length:grid.h},(_,y)=>Array.from({length:grid.w},(_,x)=>{
+    const id=cells[y*grid.w+x];
+    return id?((lockedDeptIds||[]).includes(id)?`[${dm[id]?.abbr}]`:dm[id]?.abbr):"";
+  }));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    [`Layout | ${grid.w*grid.ft}ft x ${grid.h*grid.ft}ft | D:${ds.toLocaleString()} A:${as} | ${algo.toUpperCase()}`],
+    [`Locked: ${(lockedDeptIds||[]).map(id=>dm[id]?.name).filter(Boolean).join(", ")||"None"}`],[`Upper bound enforcement: ${upperBoundOn?"ON":"OFF"}`],[],
+    ...gridSheet
+  ]),"Layout Grid");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ["DEPARTMENTS"],["ID","Name","Abbr","Target sqft","Cap?","Grow?","Shrink?"],
+    ...depts.map(d=>[d.id,d.name,d.abbr,d.sqft,d.capped?"YES":"no",d.grow?"YES":"no",d.shrink?"YES":"no"])
+  ]),"Departments");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ["FLOW PAIRS"],["Dept A","Dept B","Flow"],
+    ...(flowPairs||[]).map(({a,b,flow})=>[dm[a]?.name||a,dm[b]?.name||b,flow])
+  ]),"Flow Pairs");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ["REWARD PAIRS"],["Dept A","Dept B","Rating","Meaning","Adjacent?","Score"],
+    ...adetails.map(({a,b,r,meaning,adj,val})=>[dm[a]?.name||a,dm[b]?.name||b,r,meaning,adj?"YES":"no",val]),
+    [],["","","","","TOTAL A-SCORE:",as]
+  ]),"Reward Pairs");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ["D-SCORE BREAKDOWN"],["From","To","Flow","Distance (ft)","Flow x Distance"],
+    ...[...dpairs].sort((a,b)=>b.contrib-a.contrib).map(p=>[dm[p.from]?.name||p.from,dm[p.to]?.name||p.to,p.flow,p.dist,p.contrib]),
+    [],["","","","TOTAL:",ds]
+  ]),"Distance Details");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ["SCORE SUMMARY"],[],["D-Score",ds],["A-Score",as],[],
+    ["Algorithm",algo.toUpperCase()],["Objective",obj==="dscore"?"Minimize D-Score":obj==="ascore"?"Maximize A-Score":"Balanced Hybrid Objective"],["Upper bound enforcement",upperBoundOn?"ON":"OFF"],[],
+    ["DEPARTMENT PAINTED AREAS"],["Dept","Target sqft","Painted sqft","Diff"],
+    ...depts.map(d=>[d.name,d.sqft,dsqft[d.id]||0,(dsqft[d.id]||0)-d.sqft])
+  ]),"Score Summary");
+  XLSX.writeFile(wb,"GyroLux_Layout_Analysis_Flexible.xlsx");
+}
+
+function App(){
+  const canvasRef=useRef(null);
+  const isPainting=useRef(false);
+  const rectStart=useRef(null);
+  const limitWarnRef=useRef(0);
+
+  const [grid,setGrid]=useState(DEFAULT_GRID);
+  const [gridDraft,setGridDraft]=useState(DEFAULT_GRID);
+  const [depts,setDepts]=useState(DEFAULT_DEPTS);
+  const [flowPairs,setFlowPairs]=useState(DEFAULT_FLOW_PAIRS);
+  const [rewardPairs,setRewardPairs]=useState(DEFAULT_REWARD_PAIRS);
+  const [cells,setCells]=useState(()=>initCells(DEFAULT_GRID));
+  const [activeDept,setActiveDept]=useState(2);
+  const [tool,setTool]=useState("paint");
+  const [showGrid,setShowGrid]=useState(true);
+  const [preview,setPreview]=useState(null);
+  const [nc,setNc]=useState(4);
+  const [algo,setAlgo]=useState("craft");
+  const [dataSource,setDataSource]=useState({mode:"defaults",name:"Built-in defaults",sheets:[]});
+  const [dataError,setDataError]=useState("");
+  const [obj,setObj]=useState("dscore");
+  const [maxIt,setMaxIt]=useState(30);
+  const [trials,setTrials]=useState(5);
+  const [impIt,setImpIt]=useState(20);
+  const [running,setRunning]=useState(false);
+  const [hist,setHist]=useState([]);
+  const [lockedDepts,setLockedDepts]=useState([]);
+  const [upperBoundOn,setUpperBoundOn]=useState(true);
+  const [log,setLog]=useState(["✓ Ready — paint a department, lock it if needed, and use MAX to mark its target cap. Upper Bound controls whether those caps are enforced."]);
+  const [tab,setTab]=useState("scores");
+  const [matrixTab,setMatrixTab]=useState("flow");
+  const [newDept,setNewDept]=useState({name:"",abbr:"",sqft:2000,color:nextColor(DEFAULT_DEPTS.length)});
+  const [removeDeptId,setRemoveDeptId]=useState(DEFAULT_DEPTS[0]?.id||0);
+  const [editDeptId,setEditDeptId]=useState(DEFAULT_DEPTS[0]?.id||0);
+  const [editDept,setEditDept]=useState({name:"",abbr:"",sqft:2000,color:"#64748b",capped:false,grow:false,shrink:false});
+  const algoState=ALGO_META[algo]||ALGO_META.craft;
+  const algoValidation=useMemo(()=>validateAlgorithmData(algo,flowPairs,rewardPairs),[algo,flowPairs,rewardPairs]);
+
+  const dm=useMemo(()=>getDeptMap(depts),[depts]);
+  const flowTokenLookup=useMemo(()=>buildPairTokenLookup(flowPairs,"flow"),[flowPairs]);
+  const rewardTokenLookup=useMemo(()=>buildPairTokenLookup(rewardPairs,"reward"),[rewardPairs]);
+  const lockedData=useMemo(()=>getLockedData(cells,lockedDepts,grid),[cells,lockedDepts,grid]);
+  const lockedIdSet=lockedData.idSet;
+  const scoreState=useMemo(()=>scoreCells(cells,grid,depts,flowPairs,rewardPairs),[cells,grid,depts,flowPairs,rewardPairs]);
+  const {ds,as,dpairs,adetails,dsqft}=scoreState;
+  const eMet=adetails.filter(d=>d.r==="E"&&d.adj).length;
+  const eTotal=adetails.filter(d=>d.r==="E").length;
+  const xVio=adetails.filter(d=>d.r==="X"&&d.adj).length;
+  const totalCapacity=grid.w*grid.h*cellArea(grid);
+  const targetTotal=depts.reduce((s,d)=>s+(Number(d.sqft)||0),0);
+
+  useEffect(()=>{
+    drawCanvas(canvasRef.current,cells,activeDept,tool,preview,showGrid,grid,depts,lockedIdSet);
+  },[cells,activeDept,tool,preview,showGrid,grid,depts,lockedIdSet]);
+
+  useEffect(()=>{
+    const canvas=canvasRef.current;
+    if(canvas){canvas.width=grid.w*SCALE;canvas.height=grid.h*SCALE;}
+    drawCanvas(canvas,cells,activeDept,tool,preview,showGrid,grid,depts,lockedIdSet);
+  },[grid]);
+
+  useEffect(()=>{
+    if(obj!==algoState.fixedObj)setObj(algoState.fixedObj);
+  },[algo]);
+
+  useEffect(()=>{
+    if(!depts.length){
+      if(editDeptId!==0)setEditDeptId(0);
+      return;
+    }
+    const dept=depts.find(d=>d.id===editDeptId) || depts[0];
+    if(editDeptId!==dept.id){
+      setEditDeptId(dept.id);
+      return;
+    }
+    setEditDept({
+      name:dept.name||"",
+      abbr:dept.abbr||"",
+      sqft:dept.sqft??0,
+      color:dept.color||nextColor(dept.id),
+      capped:!!dept.capped,
+      grow:!!dept.grow,
+      shrink:!!dept.shrink,
+    });
+  },[editDeptId,depts]);
+
+  function getCellXY(e){
+    const canvas=canvasRef.current;
+    const rect=canvas.getBoundingClientRect();
+    const scaleX=canvas.width/rect.width, scaleY=canvas.height/rect.height;
+    return {
+      x:Math.floor((e.clientX-rect.left)*scaleX/SCALE),
+      y:Math.floor((e.clientY-rect.top)*scaleY/SCALE),
+    };
+  }
+
+  function maybeWarnLimit(name){
+    const now=Date.now();
+    if(now-limitWarnRef.current<250)return;
+    limitWarnRef.current=now;
+    setLog(p=>[...p,`⚠ ${name} hit its target area while Upper Bound is ON.`]);
+  }
+
+  function canPlaceDept(prev,newId,idx){
+    if(!newId)return true;
+    const dept=dm[newId];
+    if(!upperBoundOn||!dept?.capped)return true;
+    if(prev[idx]===newId)return true;
+    const counts=countCells(prev);
+    if((counts[newId]||0)>=targetCells(dept,grid)){
+      maybeWarnLimit(dept.name);
+      return false;
+    }
+    return true;
+  }
+
+  function paintAt(x,y,override){
+    if(x<0||x>=grid.w||y<0||y>=grid.h)return;
+    if(isLockedCell(x,y,lockedData.cellOwner,grid))return;
+    const newId=override!==undefined?override:(tool==="erase"?0:activeDept);
+    setCells(prev=>{
+      const idx=y*grid.w+x;
+      if(prev[idx]===newId)return prev;
+      if(newId&&!canPlaceDept(prev,newId,idx))return prev;
+      const next=[...prev];
+      next[idx]=newId;
+      return next;
+    });
+  }
+
+  function fillRect(x1,y1,x2,y2){
+    const minX=Math.max(0,Math.min(x1,x2)),maxX=Math.min(grid.w-1,Math.max(x1,x2));
+    const minY=Math.max(0,Math.min(y1,y2)),maxY=Math.min(grid.h-1,Math.max(y1,y2));
+    const newId=tool==="erase"?0:activeDept;
+    setCells(prev=>{
+      const next=[...prev];
+      for(let y=minY;y<=maxY;y++){
+        for(let x=minX;x<=maxX;x++){
+          const idx=y*grid.w+x;
+          if(isLockedCell(x,y,lockedData.cellOwner,grid))continue;
+          if(next[idx]===newId)continue;
+          if(newId&&!canPlaceDept(next,newId,idx))continue;
+          next[idx]=newId;
+        }
+      }
+      return next;
+    });
+  }
+
+  function onMouseDown(e){
+    e.preventDefault();
+    const {x,y}=getCellXY(e);
+    if(x<0||x>=grid.w||y<0||y>=grid.h)return;
+    isPainting.current=true;
+    if(tool==="rect"){
+      rectStart.current={x,y};
+      setPreview({x1:x,y1:y,x2:x,y2:y});
+    }else paintAt(x,y);
+  }
+  function onMouseMove(e){
+    if(!isPainting.current)return;
+    const {x,y}=getCellXY(e);
+    if(x<0||x>=grid.w||y<0||y>=grid.h)return;
+    if(tool==="rect"){
+      if(rectStart.current)setPreview({x1:rectStart.current.x,y1:rectStart.current.y,x2:x,y2:y});
+    }else paintAt(x,y);
+  }
+  function onMouseUp(){
+    if(!isPainting.current)return;
+    isPainting.current=false;
+    if(tool==="rect"&&preview){
+      fillRect(preview.x1,preview.y1,preview.x2,preview.y2);
+      setPreview(null);
+      rectStart.current=null;
+    }
+  }
+  function onMouseLeave(){
+    if(isPainting.current&&tool!=="rect")isPainting.current=false;
+  }
+
+  const run=useCallback(async()=>{
+    const check=validateAlgorithmData(algo,flowPairs,rewardPairs);
+    if(!check.ok){
+      setLog(p=>[...p,`✗ ${check.msg}`]);
+      setTab("data");
+      return;
+    }
+    setRunning(true);
+    setLog(p=>[...p,`▶ Running ${algoState.label}...`]);
+    await new Promise(r=>setTimeout(r,20));
+    const t0=Date.now();
+    const ids=depts.map(d=>d.id);
+    let res;
+    if(algo==="craft")res=runCRAFT(ids,nc,maxIt,"dscore",grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+    else if(algo==="corelap")res=runCORELAP(nc,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+    else if(algo==="random")res=runRandom(nc,trials,impIt,"dscore",grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+    else if(algo==="aldep")res=runALDEP(nc,trials,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+    else if(algo==="blocplan")res=runBLOCPLAN(nc,maxIt,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+    else res=runHybrid(nc,maxIt,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn);
+    const ms=Date.now()-t0;
+    const newCells=buildLayoutCells(res.ids,nc,grid,depts,lockedData,upperBoundOn);
+    setCells(newCells);
+    setHist(res.hist||[]);
+    setLog(p=>[...p,`✓ ${algoState.label} | ${ms}ms | D:${res.ds.toLocaleString()} | A:${res.as} | Iters:${res.iter}`]);
+    setRunning(false);
+    setTab("scores");
+  },[algo,algoState,nc,maxIt,trials,impIt,grid,depts,flowPairs,rewardPairs,lockedData,upperBoundOn]);
+
+  function clearAll(){
+    setCells(prev=>prev.map((id,idx)=>lockedData.cellOwner[idx]||0));
+    setLog(p=>[...p,lockedData.ids.length?"🗑 Cleared all unlocked departments.":"🗑 Cleared layout."]);
+  }
+
+  function toggleDeptLock(id){
+    const dept=dm[id];
+    if(!dept)return;
+    const requested=lockedDepts.includes(id);
+    if(requested){
+      setLockedDepts(prev=>prev.filter(v=>v!==id));
+      setLog(p=>[...p,`🔓 Unlocked ${dept.name}`]);
+      return;
+    }
+    const painted=dsqft[id]||0;
+    setLockedDepts(prev=>prev.includes(id)?prev:[...prev,id]);
+    if(painted&&activeDept===id){
+      const nextDept=depts.find(d=>d.id!==id&&!lockedDepts.includes(d.id));
+      if(nextDept)setActiveDept(nextDept.id);
+    }
+    setLog(p=>[...p,painted?`🔒 Locked ${dept.name} in its current position.`:`🧷 ${dept.name} will lock as soon as you paint it.`]);
+  }
+
+  function toggleDeptCap(id){
+    const dept=dm[id];
+    if(!dept)return;
+    setDepts(prev=>prev.map(d=>d.id===id?{...d,capped:!d.capped}:d));
+    setLog(p=>[...p,dept.capped?`♾ Removed MAX marker from ${dept.name}`:`🧱 ${dept.name} marked with a target cap`]);
+  }
+
+  function updateFlowMatrixCell(a,b,raw){
+    if(a===b)return;
+    setFlowPairs(prev=>setFlowPairValueInList(prev,a,b,raw));
+  }
+
+  function updateRewardMatrixCell(a,b,raw){
+    if(a===b)return;
+    setRewardPairs(prev=>setRewardPairValueInList(prev,a,b,raw));
+  }
+
+  function toggleDeptFlex(id,key,label){
+    const dept=dm[id];
+    if(!dept)return;
+    setDepts(prev=>prev.map(d=>d.id===id?{...d,[key]:!d[key]}:d));
+    setLog(p=>[...p,dept[key]?`↩ ${label} disabled for ${dept.name}`:`↗ ${label} enabled for ${dept.name}`]);
+  }
+
+  function applyGrid(){
+    const next={
+      w:clamp(Number(gridDraft.w)||grid.w,5,120),
+      h:clamp(Number(gridDraft.h)||grid.h,5,120),
+      ft:clamp(Number(gridDraft.ft)||grid.ft,1,100),
+    };
+    setCells(prev=>resizeCells(prev,grid,next));
+    setGrid(next);
+    setGridDraft(next);
+    setNc(v=>clamp(v,1,next.w));
+    setLog(p=>[...p,`▦ Grid updated to ${next.w}×${next.h} cells @ ${next.ft}ft per cell.`]);
+  }
+
+  function addDepartment(){
+    const name=(newDept.name||"").trim();
+    if(!name){setLog(p=>[...p,"⚠ Department name is required."]);return;}
+    const id=nextDeptId(depts);
+    const dept={
+      id,
+      name,
+      abbr:normalizeAbbr(name,newDept.abbr,id),
+      sqft:Math.max(1,Number(newDept.sqft)||0),
+      color:newDept.color||nextColor(id),
+      capped:false,
+      grow:false,
+      shrink:false,
+    };
+    setDepts(prev=>[...prev,dept]);
+    setActiveDept(id);
+    setRemoveDeptId(id);
+    setEditDeptId(id);
+    setNewDept({name:"",abbr:"",sqft:2000,color:nextColor(id+1)});
+    setLog(p=>[...p,`➕ Added ${dept.name} (${dept.abbr}) with target ${dept.sqft.toLocaleString()} sqft.`]);
+    setTab("scores");
+  }
+
+  function removeDepartment(id){
+    const dept=dm[id];
+    if(!dept){setLog(p=>[...p,"⚠ Select a valid department to remove."]);return;}
+    const remaining=depts.filter(d=>d.id!==id);
+    setDepts(remaining);
+    setFlowPairs(prev=>prev.filter(p=>p.a!==id&&p.b!==id));
+    setRewardPairs(prev=>prev.filter(p=>p.a!==id&&p.b!==id));
+    setCells(prev=>prev.map(cell=>cell===id?0:cell));
+    setLockedDepts(prev=>prev.filter(v=>v!==id));
+    if(activeDept===id)setActiveDept(remaining[0]?.id||0);
+    setRemoveDeptId(remaining[0]?.id||0);
+    setEditDeptId(remaining[0]?.id||0);
+    setHist([]);
+    setLog(p=>[...p,`🗑 Removed ${dept.name}. Its painted cells were cleared, and linked D-score / REL entries were deleted.`]);
+    setTab("scores");
+  }
+
+  function applyDepartmentEdits(){
+    const dept=depts.find(d=>d.id===editDeptId);
+    if(!dept){setLog(p=>[...p,"⚠ Select a valid department to modify."]);return;}
+    const name=(editDept.name||"").trim();
+    if(!name){setLog(p=>[...p,"⚠ Department name is required."]);return;}
+    const sqft=Math.max(1,Number(editDept.sqft)||0);
+    const updated={
+      ...dept,
+      name,
+      abbr:normalizeAbbr(name,editDept.abbr,dept.id),
+      sqft,
+      color:(editDept.color||dept.color||nextColor(dept.id)).trim(),
+      capped:!!editDept.capped,
+      grow:!!editDept.grow,
+      shrink:!!editDept.shrink,
+    };
+    setDepts(prev=>prev.map(d=>d.id===dept.id?updated:d));
+    setLog(p=>[...p,`✎ Updated ${updated.name}. Target area is now ${updated.sqft.toLocaleString()} sqft.`]);
+    setTab("scores");
+  }
+
+  function buildBrowserSnapshot(){
+    return {
+      version:"v8-matrix",
+      exportedAt:new Date().toISOString(),
+      grid,
+      depts,
+      flowPairs,
+      rewardPairs,
+      cells,
+      activeDept,
+      tool,
+      showGrid,
+      nc,
+      algo,
+      obj,
+      maxIt,
+      trials,
+      impIt,
+      lockedDepts,
+      upperBoundOn,
+      tab,
+      log:log.slice(-40),
+      hist,
+      dataSource,
+    };
+  }
+
+  function applyBrowserSnapshot(snapshot,sourceName="Browser save"){
+    if(!snapshot||typeof snapshot!=="object")throw new Error("Imported JSON is not a valid layout snapshot.");
+    const nextGrid={
+      w:clamp(Number(snapshot.grid?.w)||grid.w,5,120),
+      h:clamp(Number(snapshot.grid?.h)||grid.h,5,120),
+      ft:clamp(Number(snapshot.grid?.ft)||grid.ft,1,100),
+    };
+    const seen=new Set();
+    const rawDepts=Array.isArray(snapshot.depts)&&snapshot.depts.length?snapshot.depts:depts;
+    const nextDepts=[];
+    rawDepts.forEach((raw,idx)=>{
+      let id=Number(raw?.id);
+      if(!Number.isFinite(id)||id<=0||seen.has(id)){
+        id=idx+1;
+        while(seen.has(id))id++;
+      }
+      seen.add(id);
+      const name=String(raw?.name||`Department ${id}`).trim()||`Department ${id}`;
+      nextDepts.push({
+        id,
+        name,
+        abbr:normalizeAbbr(name,raw?.abbr,id),
+        color:String(raw?.color||nextColor(idx)).trim()||nextColor(idx),
+        sqft:Math.max(1,Number(raw?.sqft)||2000),
+        capped:!!raw?.capped,
+        grow:!!raw?.grow,
+        shrink:!!raw?.shrink,
+        locked:!!raw?.locked,
+      });
+    });
+    if(!nextDepts.length)throw new Error("Imported snapshot does not contain any departments.");
+    const validIds=new Set(nextDepts.map(d=>d.id));
+    let nextCells=Array.isArray(snapshot.cells)?snapshot.cells.map(v=>{
+      const id=Number(v)||0;
+      return validIds.has(id)?id:0;
+    }):initCells(nextGrid);
+    if(nextCells.length!==nextGrid.w*nextGrid.h)nextCells=initCells(nextGrid);
+    const nextFlowPairs=Array.isArray(snapshot.flowPairs)?snapshot.flowPairs.map(p=>({a:Number(p?.a),b:Number(p?.b),flow:Number(p?.flow)})).filter(p=>validIds.has(p.a)&&validIds.has(p.b)&&p.a!==p.b&&Number.isFinite(p.flow)&&p.flow!==0):flowPairs;
+    const nextRewardPairs=Array.isArray(snapshot.rewardPairs)?snapshot.rewardPairs.map(p=>({a:Number(p?.a),b:Number(p?.b),r:String(p?.r||"").toUpperCase(),value:p?.value})).filter(p=>validIds.has(p.a)&&validIds.has(p.b)&&p.a!==p.b&&(p.r||p.value!==undefined)):rewardPairs;
+    const nextLocked=Array.isArray(snapshot.lockedDepts)?snapshot.lockedDepts.map(v=>Number(v)).filter(id=>validIds.has(id)):nextDepts.filter(d=>d.locked).map(d=>d.id);
+    const nextActive=validIds.has(Number(snapshot.activeDept))?Number(snapshot.activeDept):nextDepts[0].id;
+    const nextTool=["paint","rect","erase"].includes(snapshot.tool)?snapshot.tool:"paint";
+    const nextAlgo=ALGO_META[snapshot.algo]?snapshot.algo:"craft";
+    const nextObj=["dscore","ascore","hybrid"].includes(snapshot.obj)?snapshot.obj:(ALGO_META[nextAlgo]?.fixedObj||"dscore");
+    setGrid(nextGrid);
+    setGridDraft(nextGrid);
+    setDepts(nextDepts);
+    setFlowPairs(nextFlowPairs);
+    setRewardPairs(nextRewardPairs);
+    setCells(nextCells);
+    setActiveDept(nextActive);
+    setTool(nextTool);
+    setShowGrid(snapshot.showGrid!==undefined?!!snapshot.showGrid:true);
+    setNc(clamp(Number(snapshot.nc)||4,1,nextGrid.w));
+    setAlgo(nextAlgo);
+    setObj(nextObj);
+    setMaxIt(clamp(Number(snapshot.maxIt)||30,1,200));
+    setTrials(clamp(Number(snapshot.trials)||5,1,50));
+    setImpIt(clamp(Number(snapshot.impIt)||20,1,100));
+    setRunning(false);
+    setHist(Array.isArray(snapshot.hist)?snapshot.hist:[]);
+    setLockedDepts(nextLocked);
+    setUpperBoundOn(snapshot.upperBoundOn!==undefined?!!snapshot.upperBoundOn:true);
+    setTab(typeof snapshot.tab==="string"?snapshot.tab:"scores");
+    setRemoveDeptId(nextActive);
+    setEditDeptId(nextActive);
+    setNewDept({name:"",abbr:"",sqft:2000,color:nextColor(nextDepts.length)});
+    setDataSource({mode:"json",name:sourceName,sheets:[]});
+    setDataError("");
+    setLog(prev=>[...prev,`📥 Loaded ${sourceName}.`]);
+  }
+
+  function saveToBrowser(){
+    try{
+      window.localStorage.setItem(BROWSER_SAVE_KEY,JSON.stringify(buildBrowserSnapshot()));
+      setLog(p=>[...p,"💾 Saved the current layout locally in this browser."]);
+    }catch(err){
+      setLog(p=>[...p,`✗ Browser save failed: ${err.message||err}`]);
+    }
+  }
+
+  function loadFromBrowser(){
+    try{
+      const raw=window.localStorage.getItem(BROWSER_SAVE_KEY);
+      if(!raw)throw new Error("No browser save was found for this app on this device.");
+      applyBrowserSnapshot(JSON.parse(raw),"browser save");
+    }catch(err){
+      setLog(p=>[...p,`✗ Browser load failed: ${err.message||err}`]);
+    }
+  }
+
+  function exportJsonSnapshot(){
+    try{
+      const blob=new Blob([JSON.stringify(buildBrowserSnapshot(),null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;
+      a.download="GyroLux_Layout_Snapshot.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      setLog(p=>[...p,"🧩 Exported JSON snapshot."]);
+    }catch(err){
+      setLog(p=>[...p,`✗ JSON export failed: ${err.message||err}`]);
+    }
+  }
+
+  function resetAppState(){
+    const ok=window.confirm("Reset the app back to the built-in defaults? This will clear the current layout on screen.");
+    if(!ok)return;
+    setGrid(DEFAULT_GRID);
+    setGridDraft(DEFAULT_GRID);
+    setDepts(DEFAULT_DEPTS);
+    setFlowPairs(DEFAULT_FLOW_PAIRS);
+    setRewardPairs(DEFAULT_REWARD_PAIRS);
+    setCells(initCells(DEFAULT_GRID));
+    setActiveDept(DEFAULT_DEPTS[1]?.id||DEFAULT_DEPTS[0]?.id||0);
+    setTool("paint");
+    setShowGrid(true);
+    setPreview(null);
+    setNc(4);
+    setAlgo("craft");
+    setDataSource({mode:"defaults",name:"Built-in defaults",sheets:[]});
+    setDataError("");
+    setObj("dscore");
+    setMaxIt(30);
+    setTrials(5);
+    setImpIt(20);
+    setRunning(false);
+    setHist([]);
+    setLockedDepts([]);
+    setUpperBoundOn(true);
+    setTab("scores");
+    setNewDept({name:"",abbr:"",sqft:2000,color:nextColor(DEFAULT_DEPTS.length)});
+    setRemoveDeptId(DEFAULT_DEPTS[0]?.id||0);
+    setEditDeptId(DEFAULT_DEPTS[0]?.id||0);
+    setLog(["↺ Reset to built-in defaults."]);
+  }
+
+  async function handleWorkbookUpload(e){
+    const file=e.target.files?.[0];
+    if(!file)return;
+    try{
+      const lower=file.name.toLowerCase();
+      if(lower.endsWith(".json")){
+        const raw=await file.text();
+        applyBrowserSnapshot(JSON.parse(raw),file.name);
+        setTab("data");
+      }else{
+        const data=await file.arrayBuffer();
+        const workbook=XLSX.read(data,{type:"array"});
+        const parsed=loadWorkbookData(workbook,depts,grid,upperBoundOn);
+        const nextGrid=parsed.grid||grid;
+        setGrid(nextGrid);
+        setGridDraft(nextGrid);
+        setNc(v=>clamp(v,1,nextGrid.w));
+        setDepts(parsed.depts);
+        setFlowPairs(parsed.flowPairs);
+        setRewardPairs(parsed.rewardPairs);
+        setCells(parsed.cells||initCells(nextGrid));
+        setLockedDepts(parsed.lockedIds||[]);
+        setUpperBoundOn(parsed.upperBound!==undefined?parsed.upperBound:true);
+        setHist([]);
+        setActiveDept(parsed.depts[0]?.id||0);
+        setRemoveDeptId(parsed.depts[0]?.id||0);
+        setEditDeptId(parsed.depts[0]?.id||0);
+        setDataSource({mode:"workbook",name:file.name,sheets:parsed.sheets,flowCount:parsed.flowPairs.length,adjCount:parsed.rewardPairs.length});
+        setDataError("");
+        setLog(p=>[...p,`📥 Loaded ${file.name} locally | ${parsed.depts.length} depts | ${parsed.flowPairs.length} D-score pairs | ${parsed.rewardPairs.length} adjacency pairs | Upper Bound ${parsed.upperBound?"ON":"OFF"}.`,...parsed.warnings.map(w=>`ℹ ${w}`)]);
+        setTab("data");
+      }
+    }catch(err){
+      setDataError(err.message||String(err));
+      setLog(p=>[...p,`✗ Import failed: ${err.message||err}`]);
+    }finally{
+      e.target.value="";
+    }
+  }
+
+  function downloadWorkbookTemplate(){
+    try{
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+        ["gridWidth",grid.w],["gridHeight",grid.h],["feetPerCell",grid.ft],["enforceUpperBound",upperBoundOn?"yes":"no"]
+      ]),"Meta");
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+        ["ID","Name","Abbr","Sqft","Color","Grow","Shrink","Capped","Locked"],
+        ...depts.map(d=>[d.id,d.name,d.abbr,d.sqft,d.color,d.grow?"yes":"",d.shrink?"yes":"",d.capped?"yes":"",lockedDepts.includes(d.id)?"yes":""])
+      ]),"Departments");
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+        ["",...Array.from({length:grid.w},(_,i)=>i+1)],
+        ...Array.from({length:grid.h},(_,y)=>[y+1,...Array.from({length:grid.w},(_,x)=>dm[cells[y*grid.w+x]]?.abbr||"")])
+      ]),"Layout");
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+        ["DeptA","DeptB","Flow"],
+        ...flowPairs.map(p=>[dm[p.a]?.abbr||p.a,dm[p.b]?.abbr||p.b,p.flow])
+      ]),"FlowPairs");
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+        ["DeptA","DeptB","Rating"],
+        ...rewardPairs.map(p=>[dm[p.a]?.abbr||p.a,dm[p.b]?.abbr||p.b,getRewardToken(p)])
+      ]),"RewardPairs");
+      XLSX.writeFile(wb,"Layout_Optimizer_Template.xlsx");
+      setLog(p=>[...p,"🧾 Exported workbook template."]);
+    }catch(err){
+      setLog(p=>[...p,`✗ Template export failed: ${err.message||err}`]);
+    }
+  }
+
+  const C={bg:"#0b0e14",surf:"#111827",surf2:"#161d2b",border:"#1e2d45",dim:"#64748b",muted:"#475569"};
+  const inp={background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,padding:"4px 7px",color:"#e2e8f0",fontFamily:"monospace",fontSize:11,width:"100%",marginBottom:6,display:"block"};
+  const SL=({c,mt})=>(<div style={{fontSize:8,letterSpacing:2,textTransform:"uppercase",color:C.dim,borderBottom:`1px solid ${C.border}`,paddingBottom:3,marginBottom:7,marginTop:mt||10}}>{c}</div>);
+  const Btn=({onClick,primary,danger,disabled,children,style={}})=>(<button onClick={onClick} disabled={disabled} style={{width:"100%",padding:"6px 0",background:primary?"#1d4ed8":danger?"#450a0a":C.surf2,border:`1px solid ${primary?"#2563eb":danger?"#991b1b":C.border}`,borderRadius:5,color:primary?"#fff":danger?"#fca5a5":C.dim,cursor:disabled?"not-allowed":"pointer",fontFamily:"monospace",fontSize:11,fontWeight:primary?600:400,marginBottom:4,opacity:disabled?0.5:1,...style}}>{children}</button>);
+  const paintCounts=useMemo(()=>countCells(cells),[cells]);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:C.bg,overflow:"hidden"}}>
+      <div style={{background:C.surf,borderBottom:`1px solid ${C.border}`,padding:"6px 12px",display:"flex",alignItems:"center",gap:8,flexShrink:0,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",fontFamily:"serif",letterSpacing:-0.5}}>GyroLux Layout Optimizer</div>
+          <div style={{fontSize:8,color:C.dim,letterSpacing:2,textTransform:"uppercase"}}>{grid.w*grid.ft}ft × {grid.h*grid.ft}ft · {grid.w}×{grid.h} cells · {depts.length} departments</div>
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+          {[["D-Score",ds.toLocaleString(),"#60a5fa","#1e3a5f"],["A-Score",as,"#4ade80","#14532d"],[`E ${eMet}/${eTotal}`,eMet===eTotal&&eTotal>0?"✓":"…",eMet===eTotal&&eTotal>0?"#4ade80":"#fbbf24",eMet===eTotal&&eTotal>0?"#052e16":"#431407"]].map(([l,v,c,bg])=>(
+            <div key={l} style={{background:bg,borderRadius:4,padding:"2px 8px",display:"flex",gap:5,alignItems:"center"}}>
+              <span style={{fontSize:8,color:"rgba(255,255,255,0.4)"}}>{l}</span>
+              <span style={{fontSize:13,fontWeight:700,color:c}}>{v}</span>
+            </div>
+          ))}
+          {xVio>0&&<div style={{background:"#450a0a",borderRadius:4,padding:"2px 8px"}}><span style={{fontSize:9,color:"#fca5a5",fontWeight:700}}>⚠ {xVio} X violated</span></div>}
+          <div style={{background:"#0f172a",border:`1px solid ${C.border}`,borderRadius:4,padding:"2px 8px"}}><span style={{fontSize:8,color:C.dim}}>Target / Capacity </span><span style={{fontSize:11,fontWeight:700,color:targetTotal<=totalCapacity?"#4ade80":"#fbbf24"}}>{(targetTotal/1000).toFixed(1)}K / {(totalCapacity/1000).toFixed(1)}K</span></div>
+          <div style={{background:dataSource.mode==="workbook"?"#052e16":"#111827",border:`1px solid ${dataSource.mode==="workbook"?"#16a34a":C.border}`,borderRadius:4,padding:"2px 8px"}}><span style={{fontSize:8,color:C.dim}}>Data </span><span style={{fontSize:11,fontWeight:700,color:dataSource.mode==="workbook"?"#4ade80":"#94a3b8"}}>{dataSource.mode==="workbook"?"Workbook":"Defaults"}</span></div>
+          <div style={{background:upperBoundOn?"#082f49":"#111827",border:`1px solid ${upperBoundOn?"#38bdf8":C.border}`,borderRadius:4,padding:"2px 8px"}}><span style={{fontSize:8,color:C.dim}}>Upper Bound </span><span style={{fontSize:11,fontWeight:700,color:upperBoundOn?"#7dd3fc":"#94a3b8"}}>{upperBoundOn?"ON":"OFF"}</span></div>
+        </div>
+        <div style={{marginLeft:"auto",display:"flex",gap:5,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+          <div style={{display:"flex",alignItems:"center",gap:4,background:"#0f172a",border:`1px solid ${C.border}`,borderRadius:4,padding:"3px 4px",flexWrap:"wrap"}}>
+            <span style={{fontSize:8,color:C.dim,letterSpacing:1,textTransform:"uppercase"}}>Layout</span>
+            <input type="number" min="5" max="120" value={gridDraft.w} onChange={e=>setGridDraft(v=>({...v,w:e.target.value}))} title="Grid width in cells" style={{width:42,background:C.bg,border:`1px solid ${C.border}`,borderRadius:3,padding:"2px 4px",color:"#e2e8f0",fontFamily:"monospace",fontSize:9}}/>
+            <span style={{fontSize:8,color:C.muted}}>×</span>
+            <input type="number" min="5" max="120" value={gridDraft.h} onChange={e=>setGridDraft(v=>({...v,h:e.target.value}))} title="Grid height in cells" style={{width:42,background:C.bg,border:`1px solid ${C.border}`,borderRadius:3,padding:"2px 4px",color:"#e2e8f0",fontFamily:"monospace",fontSize:9}}/>
+            <span style={{fontSize:8,color:C.muted}}>@</span>
+            <input type="number" min="1" max="100" value={gridDraft.ft} onChange={e=>setGridDraft(v=>({...v,ft:e.target.value}))} title="Feet per cell" style={{width:42,background:C.bg,border:`1px solid ${C.border}`,borderRadius:3,padding:"2px 4px",color:"#e2e8f0",fontFamily:"monospace",fontSize:9}}/>
+            <span style={{fontSize:8,color:C.muted}}>ft</span>
+            <button onClick={applyGrid} style={{padding:"4px 8px",background:"#1d4ed8",border:"1px solid #2563eb",borderRadius:4,cursor:"pointer",fontSize:9,color:"#fff",fontFamily:"monospace",fontWeight:600}}>Apply</button>
+            <button onClick={()=>{setTab("config");setLog(p=>[...p,"▦ Opened layout-size settings."]);}} style={{padding:"4px 8px",background:C.surf2,border:`1px solid ${C.border}`,borderRadius:4,cursor:"pointer",fontSize:9,color:C.dim,fontFamily:"monospace"}}>More</button>
+          </div>
+          <button onClick={()=>setShowGrid(v=>!v)} style={{padding:"4px 8px",background:showGrid?"#1e3a5f":C.surf2,border:`1px solid ${showGrid?"#3b82f6":C.border}`,borderRadius:4,cursor:"pointer",fontSize:9,color:showGrid?"#60a5fa":C.dim,fontFamily:"monospace"}}>Grid {showGrid?"on":"off"}</button>
+          <button onClick={()=>{const next=!upperBoundOn;setUpperBoundOn(next);setLog(p=>[...p,`⇅ Upper Bound ${next?"enabled":"disabled"}. ${next?"Capped departments cannot exceed their target area.":"Capped departments may exceed their target area."}`]);}} style={{padding:"4px 8px",background:upperBoundOn?"#082f49":C.surf2,border:`1px solid ${upperBoundOn?"#38bdf8":C.border}`,borderRadius:4,cursor:"pointer",fontSize:9,color:upperBoundOn?"#7dd3fc":C.dim,fontFamily:"monospace"}}>Upper Bound {upperBoundOn?"on":"off"}</button>
+          <button onClick={saveToBrowser} style={{padding:"4px 8px",background:C.surf2,border:`1px solid ${C.border}`,borderRadius:4,cursor:"pointer",fontSize:9,color:C.dim,fontFamily:"monospace"}}>💾 Save Browser</button>
+          <button onClick={loadFromBrowser} style={{padding:"4px 8px",background:C.surf2,border:`1px solid ${C.border}`,borderRadius:4,cursor:"pointer",fontSize:9,color:C.dim,fontFamily:"monospace"}}>📂 Load Browser</button>
+          <button onClick={exportJsonSnapshot} style={{padding:"4px 8px",background:C.surf2,border:`1px solid ${C.border}`,borderRadius:4,cursor:"pointer",fontSize:9,color:C.dim,fontFamily:"monospace"}}>🧩 Export JSON</button>
+          <button onClick={()=>{try{doExport(cells,grid,depts,flowPairs,rewardPairs,scoreState,algo,obj,lockedData.ids,upperBoundOn);setLog(p=>[...p,"📊 Exported XLSX"]);}catch(e){setLog(p=>[...p,`✗ ${e.message}`]);}}} style={{padding:"4px 8px",background:"#052e16",border:"1px solid #16a34a",borderRadius:4,cursor:"pointer",fontSize:9,color:"#4ade80",fontFamily:"monospace"}}>📊 Export XLSX</button>
+          <button onClick={resetAppState} style={{padding:"4px 8px",background:"#450a0a",border:"1px solid #991b1b",borderRadius:4,cursor:"pointer",fontSize:9,color:"#fca5a5",fontFamily:"monospace"}}>↺ Reset</button>
+        </div>
+      </div>
+
+      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+        <div style={{width:236,background:C.surf,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",overflow:"hidden",flexShrink:0}}>
+          <div style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+            <div style={{fontSize:8,letterSpacing:2,textTransform:"uppercase",color:C.dim,marginBottom:6}}>Paint Tool</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,marginBottom:6}}>
+              {[ ["paint","✏ Paint","#3b82f6"],["rect","▭ Rect","#8b5cf6"],["erase","✕ Erase","#ef4444"] ].map(([t,label,c])=>(
+                <button key={t} onClick={()=>setTool(t)} style={{padding:"5px 0",background:tool===t?c+"33":C.surf2,border:`1px solid ${tool===t?c:C.border}`,borderRadius:4,color:tool===t?c:C.dim,cursor:"pointer",fontFamily:"monospace",fontSize:9,fontWeight:tool===t?700:400}}>{label}</button>
+              ))}
+            </div>
+            <div style={{fontSize:8,color:C.muted,lineHeight:1.4}}>Click a department to make it active. Lock can be turned on even before painting. Once painted, locked cells freeze in place. MAX marks a department as having a target cap. Upper Bound ON enforces that cap during painting and algorithm growth; OFF lets it exceed the target. Layout size can be changed from the top bar or the Config tab.</div>
+          </div>
+
+          <div style={{flex:1,overflow:"auto",padding:"8px 8px 6px"}}>
+            {depts.map(d=>{
+              const isActive=activeDept===d.id;
+              const isLocked=lockedIdSet.has(d.id);
+              const wantsLock=lockedDepts.includes(d.id);
+              const painted=dsqft[d.id]||0;
+              const pct=Math.min(100,d.sqft?painted/d.sqft*100:0);
+              const capCells=targetCells(d,grid);
+              const paintedCells=paintCounts[d.id]||0;
+              const flexLabel=d.grow&&d.shrink?"grow + shrink":d.grow?"grow":d.shrink?"shrink":"fixed";
+              return (
+                <div key={d.id} onClick={()=>setActiveDept(d.id)} style={{background:isActive?"#0f172a":C.surf2,border:`1px solid ${isActive?d.color:C.border}`,borderRadius:6,padding:6,marginBottom:5,cursor:"pointer",boxShadow:isActive?`0 0 0 1px ${d.color}33 inset`:"none"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
+                    <div style={{width:14,height:14,borderRadius:3,background:d.color,flexShrink:0}}/>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontSize:10,color:isActive?"#f8fafc":C.dim,fontWeight:isActive?700:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</div>
+                      <div style={{fontSize:8,color:C.muted}}>{d.abbr} · {(d.sqft/1000).toFixed(1)}K sqft</div>
+                    </div>
+                    <button title={wantsLock?(isLocked?"Unlock department":"Remove pending lock"):"Lock department"} onClick={e=>{e.stopPropagation();toggleDeptLock(d.id);}} style={{padding:"1px 5px",borderRadius:4,border:`1px solid ${isLocked?"#f59e0b":wantsLock?"#fbbf24":C.border}`,background:isLocked?"#261300":wantsLock?"#1c1917":"#0f172a",color:isLocked?"#fbbf24":wantsLock?"#fde68a":"#94a3b8",cursor:"pointer",fontSize:9,fontFamily:"monospace",flexShrink:0}}> {isLocked?"🔓":wantsLock?"🧷":"🔒"} </button>
+                    <button title={d.capped?"Remove max cap":"Limit to target area"} onClick={e=>{e.stopPropagation();toggleDeptCap(d.id);}} style={{padding:"1px 5px",borderRadius:4,border:`1px solid ${d.capped?"#38bdf8":C.border}`,background:d.capped?"#082f49":"#0f172a",color:d.capped?"#7dd3fc":"#94a3b8",cursor:"pointer",fontSize:9,fontFamily:"monospace",flexShrink:0}}>MAX</button>
+                    <button title={`Edit ${d.name}`} onClick={e=>{e.stopPropagation();setEditDeptId(d.id);setTab("add");}} style={{padding:"1px 5px",borderRadius:4,border:`1px solid ${isActive?d.color:C.border}`,background:"#0f172a",color:isActive?d.color:"#94a3b8",cursor:"pointer",fontSize:9,fontFamily:"monospace",flexShrink:0}}>✎</button>
+                    <button title={`Remove ${d.name}`} onClick={e=>{e.stopPropagation();removeDepartment(d.id);}} style={{padding:"1px 5px",borderRadius:4,border:"1px solid #991b1b",background:"#450a0a",color:"#fca5a5",cursor:"pointer",fontSize:9,fontFamily:"monospace",flexShrink:0}}>✕</button>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <div style={{flex:1,background:"#0b0e14",borderRadius:2,height:4,overflow:"hidden"}}>
+                      <div style={{width:`${pct}%`,height:"100%",background:pct>=95?"#22c55e":pct>=60?"#f59e0b":"#3b82f6",borderRadius:2,transition:"width 0.3s"}}/>
+                    </div>
+                    <span style={{fontSize:8,color:pct>=95?"#4ade80":C.dim,flexShrink:0,minWidth:28,textAlign:"right"}}>{(painted/1000).toFixed(1)}K</span>
+                  </div>
+                  <div style={{fontSize:7,color:C.muted,marginTop:2,display:"flex",justifyContent:"space-between",gap:6}}>
+                    <span>target {(d.sqft/1000).toFixed(1)}K</span>
+                    <span>{paintedCells}/{capCells} cells</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginTop:6}}>
+                    <button onClick={e=>{e.stopPropagation();toggleDeptFlex(d.id,"grow","Growth");}} style={{padding:"3px 0",borderRadius:4,border:`1px solid ${d.grow?"#16a34a":C.border}`,background:d.grow?"#052e16":C.bg,color:d.grow?"#4ade80":C.dim,cursor:"pointer",fontSize:8,fontFamily:"monospace"}}>+ Grow</button>
+                    <button onClick={e=>{e.stopPropagation();toggleDeptFlex(d.id,"shrink","Shrink");}} style={{padding:"3px 0",borderRadius:4,border:`1px solid ${d.shrink?"#f59e0b":C.border}`,background:d.shrink?"#431407":C.bg,color:d.shrink?"#fbbf24":C.dim,cursor:"pointer",fontSize:8,fontFamily:"monospace"}}>− Shrink</button>
+                  </div>
+                  <div style={{fontSize:7,color:C.muted,marginTop:3,textTransform:"uppercase",letterSpacing:1}}>Flex: {flexLabel}{d.capped?` · ${upperBoundOn?"max capped":"cap marked"}`:""}{wantsLock?(isLocked?" · locked":" · pending lock"):""}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{padding:"8px",borderTop:`1px solid ${C.border}`,flexShrink:0}}>
+            <Btn onClick={clearAll} danger>🗑 Clear All</Btn>
+          </div>
+        </div>
+
+        <div style={{flex:1,overflow:"auto",background:"#07090e",padding:12,display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
+          <div style={{fontSize:8,color:C.dim,marginBottom:6,lineHeight:1.5}}>
+            <b style={{color:C.muted}}>Active dept: </b>
+            <span style={{color:dm[activeDept]?.color,fontWeight:700}}>{dm[activeDept]?.name||"None"}</span>
+            &nbsp;·&nbsp;Tool: <b style={{color:"#94a3b8"}}>{tool}</b>
+            &nbsp;·&nbsp;{grid.w}×{grid.h} cells @ {grid.ft}ft each
+            &nbsp;·&nbsp;🔒 orange dashed outlines = locked regions
+          </div>
+          <canvas ref={canvasRef}
+            style={{border:`2px solid ${C.border}`,borderRadius:4,cursor:tool==="erase"?"cell":"crosshair",userSelect:"none"}}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseLeave}
+            onContextMenu={e=>e.preventDefault()}
+          />
+          <div style={{marginTop:6,display:"flex",flexWrap:"wrap",gap:3}}>
+            {adetails.filter(d=>d.r==="E"||d.r==="X").map(({a,b,r,adj},i)=>(
+              <div key={i} style={{background:adj&&r==="X"?"#450a0a":adj&&r==="E"?"#052e16":r==="E"?"#1c1a0a":"#0f1520",border:`1px solid ${adj&&r==="X"?"#dc2626":adj&&r==="E"?"#16a34a":r==="E"?"#854d0e":"#1e2d45"}`,borderRadius:3,padding:"2px 6px",fontSize:8,display:"flex",alignItems:"center",gap:3}}>
+                <span style={{color:RC[r],fontWeight:700}}>{r}</span>
+                <span style={{color:C.dim}}>{dm[a]?.abbr||a}↔{dm[b]?.abbr||b}</span>
+                <span style={{color:adj?(r==="X"?"#f87171":"#4ade80"):"#1e3a5f"}}>{adj?(r==="X"?"✗":"✓"):"○"}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:10,width:"100%",maxWidth:"100%",background:C.surf,border:`1px solid ${C.border}`,borderRadius:6,padding:8}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:8,letterSpacing:2,textTransform:"uppercase",color:C.dim}}>Model Matrices</div>
+                <div style={{fontSize:8,color:C.muted,marginTop:2}}>Edit the values the algorithms and condition chips use. Flow cells take numbers. Relation cells accept E, A, O, I, U, X, or blank.</div>
+              </div>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                <button onClick={()=>setMatrixTab("flow")} style={{padding:"4px 8px",background:matrixTab==="flow"?"#1e3a5f":C.surf2,border:`1px solid ${matrixTab==="flow"?"#3b82f6":C.border}`,borderRadius:4,cursor:"pointer",fontSize:8,color:matrixTab==="flow"?"#60a5fa":C.dim,fontFamily:"monospace"}}>Flow Matrix</button>
+                <button onClick={()=>setMatrixTab("relation")} style={{padding:"4px 8px",background:matrixTab==="relation"?"#1c2b11":C.surf2,border:`1px solid ${matrixTab==="relation"?"#65a30d":C.border}`,borderRadius:4,cursor:"pointer",fontSize:8,color:matrixTab==="relation"?"#a3e635":C.dim,fontFamily:"monospace"}}>Relation Matrix</button>
+              </div>
+            </div>
+            {matrixTab==="flow"&&<div style={{overflow:"auto",maxWidth:"100%",border:`1px solid ${C.border}`,borderRadius:4}}>
+              <table style={{borderCollapse:"collapse",fontSize:8,minWidth:Math.max(520,depts.length*52+90)}}>
+                <thead>
+                  <tr>
+                    <th style={{position:"sticky",left:0,zIndex:3,background:C.surf2,color:C.dim,padding:"5px 6px",borderBottom:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`,textAlign:"left"}}>Flow</th>
+                    {depts.map(col=><th key={col.id} style={{background:C.surf2,color:col.color,padding:"5px 6px",borderBottom:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`,minWidth:48}}>{col.abbr}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {depts.map(row=><tr key={row.id}>
+                    <th style={{position:"sticky",left:0,zIndex:2,background:C.surf2,color:row.color,padding:"4px 6px",borderBottom:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`,textAlign:"left",whiteSpace:"nowrap"}}>{row.abbr}</th>
+                    {depts.map(col=>{
+                      const same=row.id===col.id;
+                      const key=pairKey(row.id,col.id);
+                      const value=flowTokenLookup[key]||"";
+                      return <td key={col.id} style={{padding:0,borderBottom:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`,background:same?"#0f172a":"#0b0e14"}}>
+                        <input
+                          key={`${key}_${value}`}
+                          type="number"
+                          min="0"
+                          step="any"
+                          defaultValue={same?"":value}
+                          disabled={same}
+                          onBlur={e=>updateFlowMatrixCell(row.id,col.id,e.target.value)}
+                          style={{width:"100%",padding:"5px 4px",border:"none",borderRadius:0,background:"transparent",color:same?"#334155":"#e2e8f0",fontFamily:"monospace",fontSize:8,textAlign:"center"}}
+                        />
+                      </td>;
+                    })}
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>}
+            {matrixTab==="relation"&&<div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:8,color:C.dim,marginBottom:6}}>
+                {[["E","Especially important"],["A","Important"],["O","Ordinary"],["I","Unimportant"],["U","Neutral"],["X","Undesirable"]].map(([token,label])=><div key={token} style={{display:"flex",alignItems:"center",gap:4,background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,padding:"3px 6px"}}><span style={{color:RC[token],fontWeight:700}}>{token}</span><span>{label}</span></div>)}
+              </div>
+              <div style={{overflow:"auto",maxWidth:"100%",border:`1px solid ${C.border}`,borderRadius:4}}>
+                <table style={{borderCollapse:"collapse",fontSize:8,minWidth:Math.max(520,depts.length*52+90)}}>
+                  <thead>
+                    <tr>
+                      <th style={{position:"sticky",left:0,zIndex:3,background:C.surf2,color:C.dim,padding:"5px 6px",borderBottom:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`,textAlign:"left"}}>REL</th>
+                      {depts.map(col=><th key={col.id} style={{background:C.surf2,color:col.color,padding:"5px 6px",borderBottom:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`,minWidth:48}}>{col.abbr}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {depts.map(row=><tr key={row.id}>
+                      <th style={{position:"sticky",left:0,zIndex:2,background:C.surf2,color:row.color,padding:"4px 6px",borderBottom:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`,textAlign:"left",whiteSpace:"nowrap"}}>{row.abbr}</th>
+                      {depts.map(col=>{
+                        const same=row.id===col.id;
+                        const key=pairKey(row.id,col.id);
+                        const value=rewardTokenLookup[key]||"";
+                        return <td key={col.id} style={{padding:0,borderBottom:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`,background:same?"#0f172a":"#0b0e14"}}>
+                          <input
+                            key={`${key}_${value}`}
+                            type="text"
+                            maxLength="2"
+                            defaultValue={same?"":value}
+                            disabled={same}
+                            onBlur={e=>{const cleaned=e.target.value.toUpperCase().trim(); e.target.value=cleaned; updateRewardMatrixCell(row.id,col.id,cleaned);}}
+                            placeholder={same?"":"E/A/O/I/U/X"}
+                            style={{width:"100%",padding:"5px 4px",border:"none",borderRadius:0,background:"transparent",color:same?"#334155":(RC[value]||"#e2e8f0"),fontFamily:"monospace",fontSize:8,textAlign:"center",textTransform:"uppercase"}}
+                          />
+                        </td>;
+                      })}
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>
+            </div>}
+          </div>
+        </div>
+
+        <div style={{width:262,background:C.surf,borderLeft:`1px solid ${C.border}`,display:"flex",flexDirection:"column",overflow:"hidden",flexShrink:0}}>
+          <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+            {[ ["algo","Algo"],["scores","Scores"],["data","Data"],["config","Config"],["add","Add Dept"] ].map(([id,label])=>(
+              <button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"9px 0",background:"none",border:"none",borderBottom:tab===id?"2px solid #3b82f6":"2px solid transparent",color:tab===id?"#60a5fa":C.dim,cursor:"pointer",fontSize:9,fontFamily:"monospace",letterSpacing:1,textTransform:"uppercase"}}>{label}</button>
+            ))}
+          </div>
+          <div style={{flex:1,overflow:"auto",padding:11}}>
+            {tab==="algo"&&<div>
+              <SL c="Algorithm" mt={0}/>
+              <select style={inp} value={algo} onChange={e=>setAlgo(e.target.value)}>
+                {Object.entries(ALGO_META).map(([key,meta])=><option key={key} value={key}>{meta.label}</option>)}
+              </select>
+              <div style={{fontSize:9,color:C.dim,lineHeight:1.5,background:C.surf2,borderRadius:4,padding:"5px 7px",marginBottom:7}}>{algoState.blurb}</div>
+              <SL c="Required Workbook Data"/>
+              <div style={{background:algoValidation.ok?"#052e16":"#431407",border:`1px solid ${algoValidation.ok?"#16a34a":"#b45309"}`,borderRadius:5,padding:"6px 7px",fontSize:8,lineHeight:1.5,color:algoValidation.ok?"#86efac":"#fdba74",marginBottom:7}}>
+                {algoValidation.ok?`Ready. Uses ${algoState.needs.includes("flow")?"D-score":""}${algoState.needs.includes("flow")&&algoState.needs.includes("adj")?" + ":""}${algoState.needs.includes("adj")?"adjacency":""} data.`:algoValidation.msg}
+              </div>
+              <SL c="Evaluation Mode"/>
+              <input style={{...inp,color:obj==="dscore"?"#60a5fa":obj==="ascore"?"#4ade80":"#fbbf24"}} type="text" value={obj==="dscore"?"Minimize D-Score":obj==="ascore"?"Maximize A-Score":"Balanced Hybrid Objective"} readOnly />
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Columns</label>
+              <input style={inp} type="number" min="1" max={grid.w} value={nc} onChange={e=>setNc(clamp(+e.target.value||1,1,grid.w))}/>
+              {(algo==="craft"||algo==="hybrid"||algo==="blocplan")&&<>
+                <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Max Iterations</label>
+                <input style={inp} type="number" min="1" max="200" value={maxIt} onChange={e=>setMaxIt(+e.target.value)}/>
+              </>}
+              {(algo==="random"||algo==="aldep")&&<>
+                <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Trials</label>
+                <input style={inp} type="number" min="1" max="50" value={trials} onChange={e=>setTrials(+e.target.value)}/>
+              </>}
+              {algo==="random"&&<>
+                <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>CRAFT iters/trial</label>
+                <input style={inp} type="number" min="1" max="100" value={impIt} onChange={e=>setImpIt(+e.target.value)}/>
+              </>}
+              <Btn onClick={run} primary disabled={running||!algoValidation.ok}>{running?"⏳ Running...":"▶ Run Algorithm"}</Btn>
+              <div style={{fontSize:8,color:C.dim,marginBottom:8,lineHeight:1.4}}>Algorithms respect locked areas. Growable departments can absorb extra free cells. Shrinkable departments get trimmed first if capacity is tight. Upper Bound controls whether MAX-marked departments can exceed their target area.</div>
+              {hist.length>1&&<><SL c="Convergence"/>
+                <div style={{background:C.bg,borderRadius:4,padding:"4px",maxHeight:100,overflow:"auto"}}>
+                  {hist.map((h,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.dim,marginBottom:1}}>
+                    <span style={{color:"#334155"}}>Iter {h.iter}</span>
+                    <span style={{color:"#60a5fa"}}>D:{h.ds?.toLocaleString()}</span>
+                    <span style={{color:"#4ade80"}}>A:{h.as}</span>
+                  </div>)}
+                </div>
+              </>}
+            </div>}
+
+            {tab==="scores"&&<div>
+              <SL c="Score Summary" mt={0}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:8}}>
+                {[ ["D-Score",ds.toLocaleString(),"flow×dist","#60a5fa"],["A-Score",as,"adj sum","#4ade80"],[`E ${eMet}/${eTotal}`,eMet===eTotal?"ALL ✓":"partial","critical","#fbbf24"],["X viols",xVio,"undesirable",xVio>0?"#f87171":"#4ade80"] ].map(([l,v,s,c])=>(
+                  <div key={l} style={{background:C.surf2,border:`1px solid ${C.border}`,borderRadius:5,padding:"6px 8px"}}>
+                    <div style={{fontSize:7,color:C.dim,marginBottom:1}}>{l}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:c}}>{v}</div>
+                    <div style={{fontSize:7,color:C.muted}}>{s}</div>
+                  </div>
+                ))}
+              </div>
+              <SL c="Painted vs Target"/>
+              <div style={{maxHeight:170,overflow:"auto",background:C.bg,borderRadius:4,padding:"4px 6px",marginBottom:8}}>
+                {depts.map(d=>{
+                  const p=dsqft[d.id]||0, diff=p-d.sqft;
+                  return <div key={d.id} style={{display:"flex",alignItems:"center",gap:4,marginBottom:3}}>
+                    <div style={{width:8,height:8,borderRadius:1,background:d.color,flexShrink:0}}/>
+                    <span style={{fontSize:8,color:C.dim,width:30,flexShrink:0}}>{d.abbr}</span>
+                    <div style={{flex:1,background:"#111827",borderRadius:1,height:4}}>
+                      <div style={{width:`${Math.min(100,d.sqft?p/d.sqft*100:0)}%`,height:"100%",background:Math.abs(diff)<cellArea(grid)?"#22c55e":diff>0?"#f59e0b":"#3b82f6",borderRadius:1}}/>
+                    </div>
+                    <span style={{fontSize:8,color:Math.abs(diff)<cellArea(grid)?"#4ade80":diff>0?"#fbbf24":"#f87171",flexShrink:0,width:38,textAlign:"right"}}>{diff>0?"+":""}{(diff/1000).toFixed(1)}K</span>
+                  </div>;
+                })}
+              </div>
+              <SL c="D-Score Breakdown"/>
+              <div style={{maxHeight:130,overflow:"auto",background:C.bg,borderRadius:4,padding:"4px 6px",marginBottom:8}}>
+                {[...dpairs].sort((a,b)=>b.contrib-a.contrib).slice(0,12).map((p,i)=>(
+                  <div key={i} style={{display:"flex",gap:3,marginBottom:2,fontSize:8}}>
+                    <span style={{color:"#1e3a5f",width:10,flexShrink:0}}>{i+1}</span>
+                    <span style={{color:C.dim,flex:1}}>{dm[p.from]?.abbr||p.from}→{dm[p.to]?.abbr||p.to}</span>
+                    <span style={{color:"#475569",flexShrink:0}}>{p.flow}×{p.dist}ft</span>
+                    <span style={{color:"#60a5fa",width:46,textAlign:"right",flexShrink:0}}>{p.contrib.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+              <SL c="Recent Activity"/>
+              <div style={{background:C.bg,borderRadius:4,padding:"6px 7px",maxHeight:140,overflow:"auto"}}>
+                {log.slice(-12).reverse().map((line,i)=><div key={i} style={{fontSize:8,color:C.dim,lineHeight:1.5,marginBottom:2}}>{line}</div>)}
+              </div>
+            </div>}
+
+            {tab==="data"&&<div>
+              <SL c="Workbook Data" mt={0}/>
+              <div style={{background:dataSource.mode==="workbook"?"#052e16":"#111827",border:`1px solid ${dataSource.mode==="workbook"?"#16a34a":C.border}`,borderRadius:5,padding:"7px 8px",fontSize:8,lineHeight:1.5,color:dataSource.mode==="workbook"?"#86efac":C.dim,marginBottom:7}}>
+                <div><b style={{color:"#e2e8f0"}}>Source:</b> {dataSource.name}</div>
+                <div><b style={{color:"#e2e8f0"}}>Stored locally:</b> parsed in your browser only, with no upload from this page.</div>
+                <div><b style={{color:"#e2e8f0"}}>Pairs loaded:</b> {(flowPairs||[]).length} D-score, {(rewardPairs||[]).length} adjacency</div>
+                <div><b style={{color:"#e2e8f0"}}>Lock flags:</b> {(lockedDepts||[]).length} departments marked locked / pending locked</div>
+              </div>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:4}}>Import workbook or JSON snapshot (.xlsx / .xls / .json)</label>
+              <input style={inp} type="file" accept=".xlsx,.xls,.json" onChange={handleWorkbookUpload}/>
+              <Btn onClick={downloadWorkbookTemplate}>🧾 Export Template Workbook</Btn>
+              <SL c="Browser Session"/>
+              <div style={{fontSize:8,color:C.dim,lineHeight:1.5,background:C.surf2,borderRadius:4,padding:"6px 7px",marginBottom:7}}>Save stores the current state locally in this browser only. JSON snapshots are portable and can be imported on another machine or browser.</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:7}}>
+                <button onClick={saveToBrowser} style={{padding:"5px 0",borderRadius:4,border:`1px solid ${C.border}`,background:C.bg,color:C.dim,cursor:"pointer",fontSize:8,fontFamily:"monospace"}}>💾 Save Browser</button>
+                <button onClick={loadFromBrowser} style={{padding:"5px 0",borderRadius:4,border:`1px solid ${C.border}`,background:C.bg,color:C.dim,cursor:"pointer",fontSize:8,fontFamily:"monospace"}}>📂 Load Browser</button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:7}}>
+                <button onClick={exportJsonSnapshot} style={{padding:"5px 0",borderRadius:4,border:`1px solid ${C.border}`,background:C.bg,color:C.dim,cursor:"pointer",fontSize:8,fontFamily:"monospace"}}>🧩 Export JSON</button>
+                <button onClick={resetAppState} style={{padding:"5px 0",borderRadius:4,border:"1px solid #991b1b",background:"#450a0a",color:"#fca5a5",cursor:"pointer",fontSize:8,fontFamily:"monospace"}}>↺ Reset App</button>
+              </div>
+              {dataError&&<div style={{background:"#450a0a",border:"1px solid #991b1b",borderRadius:5,padding:"6px 7px",fontSize:8,lineHeight:1.5,color:"#fca5a5",marginBottom:7}}>{dataError}</div>}
+              <SL c="Accepted Sheet Names"/>
+              <div style={{fontSize:8,color:C.dim,lineHeight:1.55,background:C.surf2,borderRadius:4,padding:"6px 7px",marginBottom:7}}>
+                <div><b style={{color:"#e2e8f0"}}>Departments</b>: ID, Name, Abbr, Sqft, Color, Grow, Shrink, Capped, Locked</div>
+                <div><b style={{color:"#e2e8f0"}}>FlowPairs / DScorePairs / DistancePairs</b>: DeptA, DeptB, Flow or Score</div>
+                <div><b style={{color:"#e2e8f0"}}>RewardPairs / AdjacencyPairs / RELPairs</b>: DeptA, DeptB, Rating or Value</div>
+                <div><b style={{color:"#e2e8f0"}}>Matrix option</b>: FlowMatrix / DistanceMatrix / RewardMatrix / RELMatrix / RELChart with department labels on top row and first column</div>
+                <div><b style={{color:"#e2e8f0"}}>Optional Layout</b>: Layout / GridLayout / BlockLayout / Cells with abbreviations, names, or IDs in each cell</div>
+                <div><b style={{color:"#e2e8f0"}}>Meta</b>: gridWidth, gridHeight, feetPerCell, enforceUpperBound</div>
+              </div>
+              <SL c="Workbook Sheet List"/>
+              <div style={{background:C.bg,borderRadius:4,padding:"6px 7px",maxHeight:120,overflow:"auto"}}>
+                {(dataSource.sheets||[]).length?(dataSource.sheets||[]).map((name,i)=><div key={i} style={{fontSize:8,color:C.dim,marginBottom:2}}>{name}</div>):<div style={{fontSize:8,color:C.muted}}>No workbook uploaded yet.</div>}
+              </div>
+            </div>}
+
+            {tab==="config"&&<div>
+              <SL c="Layout Size" mt={0}/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Grid Width (cells)</label>
+              <input style={inp} type="number" min="5" max="120" value={gridDraft.w} onChange={e=>setGridDraft(v=>({...v,w:e.target.value}))}/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Grid Height (cells)</label>
+              <input style={inp} type="number" min="5" max="120" value={gridDraft.h} onChange={e=>setGridDraft(v=>({...v,h:e.target.value}))}/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Feet per Cell</label>
+              <input style={inp} type="number" min="1" max="100" value={gridDraft.ft} onChange={e=>setGridDraft(v=>({...v,ft:e.target.value}))}/>
+              <Btn onClick={applyGrid} primary>Apply Grid</Btn>
+              <div style={{fontSize:8,color:C.dim,lineHeight:1.45,background:C.surf2,borderRadius:4,padding:"6px 7px",marginTop:6}}>Changing the layout size preserves the overlapping top-left portion of the current layout and trims anything outside the new bounds. You can resize from this tab or from the compact controls in the top bar.</div>
+              <SL c="Capacity Check"/>
+              <div style={{background:C.surf2,border:`1px solid ${C.border}`,borderRadius:5,padding:"7px 8px",fontSize:8,lineHeight:1.55,color:C.dim}}>
+                <div>Total grid capacity: <b style={{color:"#e2e8f0"}}>{totalCapacity.toLocaleString()} sqft</b></div>
+                <div>Total department targets: <b style={{color:targetTotal<=totalCapacity?"#4ade80":"#fbbf24"}}>{targetTotal.toLocaleString()} sqft</b></div>
+                <div>Slack: <b style={{color:targetTotal<=totalCapacity?"#4ade80":"#f87171"}}>{(totalCapacity-targetTotal).toLocaleString()} sqft</b></div>
+              </div>
+            </div>}
+
+            {tab==="add"&&<div>
+              <SL c="Add Department" mt={0}/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Department Name</label>
+              <input style={inp} type="text" value={newDept.name} onChange={e=>setNewDept(v=>({...v,name:e.target.value}))} placeholder="Example: Packaging"/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Abbreviation</label>
+              <input style={inp} type="text" value={newDept.abbr} onChange={e=>setNewDept(v=>({...v,abbr:e.target.value.toUpperCase()}))} placeholder="PKG"/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Required Space (sqft)</label>
+              <input style={inp} type="number" min="1" value={newDept.sqft} onChange={e=>setNewDept(v=>({...v,sqft:e.target.value}))}/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Color</label>
+              <input style={inp} type="text" value={newDept.color} onChange={e=>setNewDept(v=>({...v,color:e.target.value}))} placeholder="#34D399"/>
+              <Btn onClick={addDepartment} primary>➕ Add Department</Btn>
+              <SL c="Edit Department"/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Department to Modify</label>
+              <select style={inp} value={editDeptId} onChange={e=>setEditDeptId(Number(e.target.value)||0)}>
+                {depts.length?depts.map(d=><option key={d.id} value={d.id}>{d.name} ({d.abbr})</option>):<option value={0}>No departments available</option>}
+              </select>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Department Name</label>
+              <input style={inp} type="text" value={editDept.name} onChange={e=>setEditDept(v=>({...v,name:e.target.value}))} placeholder="Example: Packaging" disabled={!depts.length}/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Abbreviation</label>
+              <input style={inp} type="text" value={editDept.abbr} onChange={e=>setEditDept(v=>({...v,abbr:e.target.value.toUpperCase()}))} placeholder="PKG" disabled={!depts.length}/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Required Space (sqft)</label>
+              <input style={inp} type="number" min="1" value={editDept.sqft} onChange={e=>setEditDept(v=>({...v,sqft:e.target.value}))} disabled={!depts.length}/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Color</label>
+              <input style={inp} type="text" value={editDept.color} onChange={e=>setEditDept(v=>({...v,color:e.target.value}))} placeholder="#34D399" disabled={!depts.length}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
+                <button onClick={()=>setEditDept(v=>({...v,capped:!v.capped}))} disabled={!depts.length} style={{padding:"5px 0",borderRadius:4,border:`1px solid ${editDept.capped?"#38bdf8":C.border}`,background:editDept.capped?"#082f49":C.bg,color:editDept.capped?"#7dd3fc":C.dim,cursor:depts.length?"pointer":"not-allowed",fontSize:8,fontFamily:"monospace",opacity:depts.length?1:0.5}}>MAX {editDept.capped?"on":"off"}</button>
+                <button onClick={()=>setEditDept(v=>({...v,grow:!v.grow}))} disabled={!depts.length} style={{padding:"5px 0",borderRadius:4,border:`1px solid ${editDept.grow?"#16a34a":C.border}`,background:editDept.grow?"#052e16":C.bg,color:editDept.grow?"#4ade80":C.dim,cursor:depts.length?"pointer":"not-allowed",fontSize:8,fontFamily:"monospace",opacity:depts.length?1:0.5}}>Grow {editDept.grow?"on":"off"}</button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
+                <button onClick={()=>setEditDept(v=>({...v,shrink:!v.shrink}))} disabled={!depts.length} style={{padding:"5px 0",borderRadius:4,border:`1px solid ${editDept.shrink?"#f59e0b":C.border}`,background:editDept.shrink?"#431407":C.bg,color:editDept.shrink?"#fbbf24":C.dim,cursor:depts.length?"pointer":"not-allowed",fontSize:8,fontFamily:"monospace",opacity:depts.length?1:0.5}}>Shrink {editDept.shrink?"on":"off"}</button>
+                <button onClick={()=>{const dept=depts.find(d=>d.id===editDeptId)||depts[0]; if(dept){setEditDept({name:dept.name||"",abbr:dept.abbr||"",sqft:dept.sqft??0,color:dept.color||nextColor(dept.id),capped:!!dept.capped,grow:!!dept.grow,shrink:!!dept.shrink}); setLog(p=>[...p,`↺ Reset editor for ${dept.name}.`]);}}} disabled={!depts.length} style={{padding:"5px 0",borderRadius:4,border:`1px solid ${C.border}`,background:C.bg,color:C.dim,cursor:depts.length?"pointer":"not-allowed",fontSize:8,fontFamily:"monospace",opacity:depts.length?1:0.5}}>Reset</button>
+              </div>
+              <Btn onClick={applyDepartmentEdits} primary disabled={!depts.length}>💾 Save Department Changes</Btn>
+              <SL c="Remove Department"/>
+              <label style={{fontSize:8,color:C.dim,display:"block",marginBottom:2}}>Department to Remove</label>
+              <select style={inp} value={removeDeptId} onChange={e=>setRemoveDeptId(Number(e.target.value)||0)}>
+                {depts.length?depts.map(d=><option key={d.id} value={d.id}>{d.name} ({d.abbr})</option>):<option value={0}>No departments available</option>}
+              </select>
+              <Btn onClick={()=>removeDepartment(removeDeptId)} danger disabled={!depts.length}>🗑 Remove Selected Department</Btn>
+              <div style={{fontSize:8,color:C.dim,lineHeight:1.45,background:C.surf2,borderRadius:4,padding:"6px 7px",marginTop:6}}>You can now modify department properties here, including required space, name, abbreviation, color, MAX cap, and grow or shrink behavior. Grow and shrink can still be toggled from the left department list too. New departments start with zero flow and zero REL ties until you choose to extend the model data later. Removing a department also clears its painted cells and deletes any linked D-score / REL entries so the model stays clean.</div>
+            </div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
