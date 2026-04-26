@@ -83,6 +83,27 @@ body { overflow-x: hidden; font-size: calc(16px * var(--ui-scale)); }
 .badge.good { color: #b8f8cf; border-color: rgba(34, 197, 94, 0.35); }
 .badge.bad { color: #ffd1d1; border-color: rgba(239, 68, 68, 0.35); }
 .badge.warn { color: #ffe6b2; border-color: rgba(245, 158, 11, 0.35); }
+.matrices-card { padding: 18px; }
+.matrix-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.matrix-scroll { overflow: auto; max-height: 360px; border: 1px solid var(--line); border-radius: 12px; background: #07111e; }
+.matrix-table { border-collapse: separate; border-spacing: 0; font-size: 12px; width: max-content; }
+.matrix-table th, .matrix-table td { padding: 0; border-right: 1px solid rgba(148, 163, 184, 0.10); border-bottom: 1px solid rgba(148, 163, 184, 0.10); text-align: center; }
+.matrix-table thead th { position: sticky; top: 0; z-index: 2; background: #0b1525; color: var(--muted); font-weight: 600; font-size: 11px; letter-spacing: 0.06em; padding: 8px 6px; min-width: 56px; }
+.matrix-table tbody th { position: sticky; left: 0; z-index: 1; background: #0b1525; color: var(--muted); font-weight: 600; font-size: 11px; padding: 6px 10px; text-align: right; white-space: nowrap; }
+.matrix-table thead th:first-child { left: 0; z-index: 3; min-width: 96px; }
+.matrix-table td.matrix-diag { background: repeating-linear-gradient(45deg, #0b1525, #0b1525 4px, #0e1a2c 4px, #0e1a2c 8px); }
+.matrix-table td.matrix-mirror { background: #08111d; }
+.matrix-table td input.matrix-input,
+.matrix-table td select.matrix-input { width: 100%; min-width: 56px; min-height: 30px; height: 30px; border: none; background: transparent; color: var(--text); text-align: center; padding: 0 4px; font-size: 12px; font-variant-numeric: tabular-nums; outline: none; }
+.matrix-table td input.matrix-input:focus,
+.matrix-table td select.matrix-input:focus { background: rgba(37, 99, 235, 0.18); box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.6); }
+.matrix-table td input.matrix-input.has-value { background: rgba(96, 165, 250, 0.10); color: var(--text); font-weight: 600; }
+.matrix-table td select.matrix-input.rel-E { background: rgba(34, 197, 94, 0.18); color: #b8f8cf; font-weight: 700; }
+.matrix-table td select.matrix-input.rel-A { background: rgba(34, 197, 94, 0.10); color: #d2f7df; font-weight: 600; }
+.matrix-table td select.matrix-input.rel-O { background: rgba(96, 165, 250, 0.10); }
+.matrix-table td select.matrix-input.rel-I { background: rgba(148, 163, 184, 0.08); color: var(--muted); }
+.matrix-table td select.matrix-input.rel-X { background: rgba(239, 68, 68, 0.18); color: #ffd1d1; font-weight: 700; }
+.matrix-empty { padding: 18px; color: var(--muted); font-size: 13px; }
 .bottom-bar { margin-top: 18px; padding: 16px; display: grid; gap: 14px; }
 .bottom-row { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: end; }
 .bottom-row-main { align-items: stretch; }
@@ -214,6 +235,7 @@ body {
 }
 .canvas-card,
 .metrics-card,
+.matrices-card,
 .bottom-bar {
   margin-bottom: 16px;
 }
@@ -251,5 +273,8 @@ body {
   .main-area {
     order: 1;
     overflow: visible;
+  }
+  .matrix-grid {
+    grid-template-columns: 1fr;
   }
 }

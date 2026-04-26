@@ -80,6 +80,8 @@
     workbookInput: qs('#workbookInput'),
     uiScaleRange: qs('#uiScaleRange'),
     uiScaleValue: qs('#uiScaleValue'),
+    flowMatrix: qs('#flowMatrix'),
+    relMatrix: qs('#relMatrix'),
     tabOverview: qs('#tab-overview'), tabAlgorithm: qs('#tab-algorithm'), tabData: qs('#tab-data'), tabIterations: qs('#tab-iterations'), tabLog: qs('#tab-log'),
   };
 
@@ -635,6 +637,135 @@
     }).join('') || `<tr><td colspan="5" class="empty-state">No REL data available.</td></tr>`;
     el.adjacencyTable.innerHTML = `<table class="mini-table"><thead><tr><th>A</th><th>B</th><th>REL</th><th>Status</th><th>Score</th></tr></thead><tbody>${adjRows}</tbody></table>`;
   }
+
+  // ---- Inline matrix editors -----------------------------------------------
+  // Both matrices are *views* over state.flowPairs / state.rewardPairs.
+  // We render only the upper triangle (i < j) since both relations are
+  // symmetric in scoreCells(). Pair lookup is order-agnostic because the
+  // default datasets store pairs in arbitrary order (e.g. {a:6, b:5}).
+  function findPairIndex(list, a, b) {
+    return list.findIndex((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a));
+  }
+
+  function setFlowValue(rowId, colId, raw) {
+    const v = Number(raw);
+    const idx = findPairIndex(state.flowPairs, rowId, colId);
+    if (!Number.isFinite(v) || v <= 0) {
+      // Empty / 0 / negative => remove the pair entirely. Keeps export clean
+      // and keeps "no pair" as the canonical "no contribution" state.
+      if (idx >= 0) state.flowPairs.splice(idx, 1);
+      return;
+    }
+    if (idx >= 0) {
+      // Preserve existing (a, b) ordering so import/export round-trips stably.
+      state.flowPairs[idx].flow = v;
+    } else {
+      state.flowPairs.push({ a: rowId, b: colId, flow: v });
+    }
+  }
+
+  function setRelValue(rowId, colId, raw) {
+    const code = String(raw || '').toUpperCase();
+    const idx = findPairIndex(state.rewardPairs, rowId, colId);
+    if (!code || !(code in REWARD_VALUES)) {
+      if (idx >= 0) state.rewardPairs.splice(idx, 1);
+      return;
+    }
+    if (idx >= 0) {
+      state.rewardPairs[idx].r = code;
+    } else {
+      state.rewardPairs.push({ a: rowId, b: colId, r: code });
+    }
+  }
+
+  function renderMatrices() {
+    if (!el.flowMatrix || !el.relMatrix) return;
+    const depts = state.depts;
+    if (depts.length < 2) {
+      const msg = '<div class="matrix-empty">Add at least two departments to edit matrices.</div>';
+      el.flowMatrix.innerHTML = msg;
+      el.relMatrix.innerHTML = msg;
+      return;
+    }
+
+    // ---- Flow matrix ----
+    let flowHtml = '<table class="matrix-table"><thead><tr><th></th>';
+    depts.forEach((d) => { flowHtml += `<th title="${escapeHtml(d.name)}">${escapeHtml(d.abbr)}</th>`; });
+    flowHtml += '</tr></thead><tbody>';
+    depts.forEach((rowDept, i) => {
+      flowHtml += `<tr><th title="${escapeHtml(rowDept.name)}">${escapeHtml(rowDept.abbr)}</th>`;
+      depts.forEach((colDept, j) => {
+        if (i === j) {
+          flowHtml += '<td class="matrix-diag"></td>';
+        } else if (i > j) {
+          // Lower triangle is a mirror of the upper; show it dimmed and inert
+          // so users see the symmetry but can't enter the same value twice.
+          flowHtml += '<td class="matrix-mirror"></td>';
+        } else {
+          const pair = state.flowPairs.find((p) => (p.a === rowDept.id && p.b === colDept.id) || (p.a === colDept.id && p.b === rowDept.id));
+          const v = pair ? Number(pair.flow) : 0;
+          const cls = v > 0 ? 'matrix-input has-value' : 'matrix-input';
+          flowHtml += `<td><input type="number" min="0" step="1" class="${cls}" data-flow-row="${rowDept.id}" data-flow-col="${colDept.id}" value="${v > 0 ? v : ''}" placeholder="0" /></td>`;
+        }
+      });
+      flowHtml += '</tr>';
+    });
+    flowHtml += '</tbody></table>';
+    el.flowMatrix.innerHTML = flowHtml;
+
+    el.flowMatrix.querySelectorAll('input[data-flow-row]').forEach((inp) => {
+      // 'input' = live update so D-Score and Top Contributors react as you
+      // type; 'change' = blur/Enter, the right time to write to localStorage.
+      inp.addEventListener('input', (e) => {
+        const rowId = Number(e.target.dataset.flowRow);
+        const colId = Number(e.target.dataset.flowCol);
+        setFlowValue(rowId, colId, e.target.value);
+        e.target.classList.toggle('has-value', Number(e.target.value) > 0);
+        renderMetrics(); // do NOT call refresh(): it would steal focus mid-edit
+      });
+      inp.addEventListener('change', () => persistState());
+    });
+
+    // ---- Relationship matrix ----
+    const relCodes = ['', 'E', 'A', 'O', 'I', 'U', 'X'];
+    let relHtml = '<table class="matrix-table"><thead><tr><th></th>';
+    depts.forEach((d) => { relHtml += `<th title="${escapeHtml(d.name)}">${escapeHtml(d.abbr)}</th>`; });
+    relHtml += '</tr></thead><tbody>';
+    depts.forEach((rowDept, i) => {
+      relHtml += `<tr><th title="${escapeHtml(rowDept.name)}">${escapeHtml(rowDept.abbr)}</th>`;
+      depts.forEach((colDept, j) => {
+        if (i === j) {
+          relHtml += '<td class="matrix-diag"></td>';
+        } else if (i > j) {
+          relHtml += '<td class="matrix-mirror"></td>';
+        } else {
+          const pair = state.rewardPairs.find((p) => (p.a === rowDept.id && p.b === colDept.id) || (p.a === colDept.id && p.b === rowDept.id));
+          const cur = pair ? pair.r : '';
+          const cls = cur ? `matrix-input rel-${cur}` : 'matrix-input';
+          const opts = relCodes.map((c) => `<option value="${c}" ${c === cur ? 'selected' : ''}>${c || '—'}</option>`).join('');
+          relHtml += `<td><select class="${cls}" data-rel-row="${rowDept.id}" data-rel-col="${colDept.id}" title="${pair ? escapeHtml(REWARD_MEANINGS[cur] || '') : 'No relationship set'}">${opts}</select></td>`;
+        }
+      });
+      relHtml += '</tr>';
+    });
+    relHtml += '</tbody></table>';
+    el.relMatrix.innerHTML = relHtml;
+
+    el.relMatrix.querySelectorAll('select[data-rel-row]').forEach((sel) => {
+      sel.addEventListener('change', (e) => {
+        const rowId = Number(e.target.dataset.relRow);
+        const colId = Number(e.target.dataset.relCol);
+        const val = e.target.value;
+        setRelValue(rowId, colId, val);
+        // Refresh the cell's color class without rebuilding the whole table.
+        e.target.className = val ? `matrix-input rel-${val}` : 'matrix-input';
+        e.target.title = val ? (REWARD_MEANINGS[val] || '') : 'No relationship set';
+        renderMetrics();
+        persistState();
+      });
+    });
+  }
+
   function deptLabel(id) {
     if (!id) return '';
     const d = state.depts.find((x) => x.id === id);
@@ -1349,6 +1480,7 @@
     if (full) renderDeptSidebar();
     renderGrid();
     renderMetrics();
+    renderMatrices();
     renderWorkspace();
     renderSlots();
   }
